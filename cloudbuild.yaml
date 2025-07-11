@@ -12,4 +12,6 @@ steps:
       - '--image=gcr.io/$PROJECT_ID/tmrw-prd-agent'
       - '--region=us-central1'
       - '--platform=managed'
-      - '--allow-unauthenticated' 
+      - '--allow-unauthenticated'
+options:
+  logging: CLOUD_LOGGING_ONLY 
