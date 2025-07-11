@@ -18,8 +18,8 @@ RUN npm install
 # Copy frontend build to backend public directory
 RUN mkdir -p ./public && cp -r /app/product-manager-ai/build/* ./public/
 
-# Expose port (match Express default or your config)
-EXPOSE 5001
+# Expose port (Cloud Run expects 8080)
+EXPOSE 8080
 
 # Set environment variables for production
 ENV NODE_ENV=production

@@ -11,7 +11,7 @@ const fs = require('fs');
 const { GoogleAuth } = require('google-auth-library');
 
 const app = express();
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 8080;
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
 const LOCATION = process.env.GCLOUD_LOCATION || 'us-central1';
