@@ -24,5 +24,8 @@ EXPOSE 8080
 # Set environment variables for production
 ENV NODE_ENV=production
 
+# Set working directory to backend before starting the server
+WORKDIR /app/backend
+
 # Start the backend server
 CMD ["node", "index.js"]
