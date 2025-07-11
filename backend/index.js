@@ -20,6 +20,9 @@ app.use((req, res, next) => {
 });
 
 const port = process.env.PORT || 8080;
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Listening on port ${port}`);
+});
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
 const LOCATION = process.env.GCLOUD_LOCATION || 'us-central1';
