@@ -1,5 +1,6 @@
-// Hardcode the service account JSON path for Google Cloud authentication
-process.env.GOOGLE_APPLICATION_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS || "/Users/mittal.hardik-int/Downloads/gen-lang-client-0723709535-e9dff5a688b8.json";
+// Remove hardcoded service account JSON path for Google Cloud authentication
+// Use default credentials provided by Cloud Run
+// process.env.GOOGLE_APPLICATION_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS || "/Users/mittal.hardik-int/Downloads/gen-lang-client-0723709535-e9dff5a688b8.json";
 
 const express = require('express');
 const cors = require('cors');
