@@ -11,6 +11,13 @@ const fs = require('fs');
 const { GoogleAuth } = require('google-auth-library');
 
 const app = express();
+
+// Log all incoming requests for debugging
+app.use((req, res, next) => {
+  console.log('Incoming request:', req.method, req.url);
+  next();
+});
+
 const port = process.env.PORT || 8080;
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
@@ -165,7 +172,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  try {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } catch (err) {
+    console.error('Error in catch-all route:', err);
+    res.status(500).send('Internal Server Error');
+  }
 });
 
 app.listen(port, () => {
