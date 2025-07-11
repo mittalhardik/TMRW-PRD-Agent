@@ -182,8 +182,4 @@ app.get('*', (req, res) => {
     console.error('Error in catch-all route:', err);
     res.status(500).send('Internal Server Error');
   }
-});
-
-app.listen(port, () => {
-  console.log(`Backend server running on port ${port}`);
 }); 
