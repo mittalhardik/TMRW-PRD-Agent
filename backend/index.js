@@ -160,6 +160,14 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
   }
 });
 
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, 'public')));
+
+// The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.listen(port, () => {
   console.log(`Backend server running on port ${port}`);
 }); 
