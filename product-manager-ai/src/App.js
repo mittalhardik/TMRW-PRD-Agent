@@ -210,7 +210,7 @@ const RetrievalAgent = () => {
     setOutput('');
     setError('');
     try {
-      const response = await fetch('http://localhost:5001/rag/query', {
+      const response = await fetch('http://localhost:8080/rag/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
