@@ -73,6 +73,29 @@ const checkCredentials = async () => {
   }
 };
 
+// Check if React build files exist
+const checkReactBuild = () => {
+  const buildPath = path.join(__dirname, '../product-manager-ai/build');
+  const indexPath = path.join(buildPath, 'index.html');
+  
+  if (!fs.existsSync(buildPath)) {
+    console.log('⚠️  React build directory not found');
+    console.log('📝 To build the frontend, run:');
+    console.log('   cd product-manager-ai && npm run build');
+    return false;
+  }
+  
+  if (!fs.existsSync(indexPath)) {
+    console.log('⚠️  React build files not found');
+    console.log('📝 To build the frontend, run:');
+    console.log('   cd product-manager-ai && npm run build');
+    return false;
+  }
+  
+  console.log('✅ React build files found');
+  return true;
+};
+
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
   console.log(`🚀 RAG Engine Backend listening on port ${port}`);
@@ -86,6 +109,15 @@ app.listen(port, () => {
       console.log('⚠️  RAG Engine features may not work without proper credentials');
     }
   });
+  
+  // Check React build files
+  const hasReactBuild = checkReactBuild();
+  if (!hasReactBuild) {
+    console.log('💡 API endpoints are still available at:');
+    console.log('   - http://localhost:8080/health');
+    console.log('   - http://localhost:8080/rag/query');
+    console.log('   - http://localhost:8080/rag/ingest');
+  }
 });
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
@@ -126,6 +158,7 @@ const upload = multer({
 app.get('/health', async (req, res) => {
   const credentialsStatus = await checkCredentials();
   const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
+  const hasReactBuild = checkReactBuild();
   
   const healthStatus = {
     status: credentialsStatus ? 'ok' : 'warning',
@@ -133,6 +166,10 @@ app.get('/health', async (req, res) => {
     service: 'RAG Engine Backend',
     version: '1.0.0',
     environment: isCloudRun ? 'cloud-run' : 'local',
+    frontend: {
+      built: hasReactBuild,
+      message: hasReactBuild ? 'React app is built and ready' : 'React app needs to be built'
+    },
     credentials: {
       configured: credentialsStatus,
       type: isCloudRun ? 'default-cloud-run' : 'service-account',
@@ -159,6 +196,7 @@ app.get('/health', async (req, res) => {
 // Status endpoint for RAG Engine configuration
 app.get('/status', async (req, res) => {
   const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
+  const hasReactBuild = checkReactBuild();
   
   res.json({
     ragEngine: {
@@ -176,6 +214,14 @@ app.get('/status', async (req, res) => {
     environment: {
       type: isCloudRun ? 'cloud-run' : 'local',
       service: isCloudRun ? process.env.K_SERVICE : 'local-development'
+    },
+    frontend: {
+      built: hasReactBuild,
+      buildInstructions: hasReactBuild ? null : [
+        'cd product-manager-ai',
+        'npm install',
+        'npm run build'
+      ]
     },
     credentials: {
       configured: await checkCredentials(),
@@ -437,15 +483,44 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Serve static files from the React app build directory
-app.use(express.static(path.join(__dirname, '../product-manager-ai/build')));
+// Serve static files from the React app build directory (if it exists)
+const buildPath = path.join(__dirname, '../product-manager-ai/build');
+if (fs.existsSync(buildPath)) {
+  app.use(express.static(buildPath));
+  console.log('✅ Serving React app from build directory');
+} else {
+  console.log('⚠️  React build directory not found - API-only mode');
+}
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
-  try {
-    res.sendFile(path.join(__dirname, '../product-manager-ai/build', 'index.html'));
-  } catch (err) {
-    console.error('❌ Error in catch-all route:', err);
-    res.status(500).send('Internal Server Error');
+  const indexPath = path.join(__dirname, '../product-manager-ai/build', 'index.html');
+  
+  if (fs.existsSync(indexPath)) {
+    try {
+      res.sendFile(indexPath);
+    } catch (err) {
+      console.error('❌ Error serving React app:', err);
+      res.status(500).send('Internal Server Error');
+    }
+  } else {
+    // If React app is not built, show API-only message
+    res.status(404).json({
+      error: 'Frontend not built',
+      message: 'The React frontend has not been built yet.',
+      instructions: [
+        'To build the frontend, run:',
+        'cd product-manager-ai',
+        'npm install',
+        'npm run build'
+      ],
+      availableEndpoints: [
+        'GET /health - Health check',
+        'POST /rag/query - RAG Engine queries',
+        'POST /rag/ingest - Document upload',
+        'GET /status - Service status'
+      ],
+      timestamp: new Date().toISOString()
+    });
   }
 }); 
