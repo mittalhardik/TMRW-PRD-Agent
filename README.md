@@ -18,6 +18,7 @@ All agents now use the RAG Engine for enhanced responses:
 - **Document Ingestion**: Upload PDFs, DOCs, TXT files to enhance knowledge
 - **Real-time Retrieval**: Access to up-to-date information from ingested documents
 - **Scalable Architecture**: Built on Google Cloud Vertex AI RAG Engine
+- **Automatic Authentication**: Works seamlessly on Cloud Run with default credentials
 
 ## 🏗️ Architecture
 
@@ -69,10 +70,26 @@ cd product-manager-ai
 npm install
 ```
 
-## 🔐 Google Cloud Credentials Setup
+## 🔐 Authentication Setup
 
-### Option 1: Automatic Setup (Recommended)
-The backend includes setup scripts for easy credential configuration:
+### Option 1: Cloud Run (Recommended for Production)
+Cloud Run uses automatic authentication with default credentials:
+
+```bash
+# Set up Cloud Run service account
+./setup-cloud-run.sh
+
+# Deploy to Cloud Run
+gcloud run deploy tmrw-prd-agent \
+  --source=backend \
+  --region=us-central1 \
+  --platform=managed \
+  --allow-unauthenticated \
+  --port=8080
+```
+
+### Option 2: Local Development
+For local development, use service account credentials:
 
 ```bash
 cd backend
@@ -84,7 +101,7 @@ cd backend
 ./setup-existing-credentials.sh
 ```
 
-### Option 2: Manual Setup
+### Option 3: Manual Setup
 1. Create a service account in Google Cloud Console
 2. Download the JSON key file
 3. Set the environment variable:
@@ -92,7 +109,7 @@ cd backend
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
 ```
 
-### Option 3: Environment File
+### Option 4: Environment File
 Create a `.env` file in the backend directory:
 ```env
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
@@ -105,7 +122,7 @@ VERTEX_RAG_ENGINE=projects/your-project/locations/us-central1/ragEngines/your-en
 
 ## 🚀 Running the Application
 
-### Development Mode
+### Local Development
 1. Set up credentials (see above)
 2. Start the backend:
 ```bash
@@ -121,7 +138,25 @@ npm start
 
 4. Open http://localhost:3000 in your browser
 
-### Production Mode
+### Cloud Run Deployment
+1. Set up Cloud Run service account:
+```bash
+./setup-cloud-run.sh
+```
+
+2. Deploy to Cloud Run:
+```bash
+gcloud run deploy tmrw-prd-agent \
+  --source=backend \
+  --region=us-central1 \
+  --platform=managed \
+  --allow-unauthenticated \
+  --port=8080
+```
+
+3. Access the application at the provided Cloud Run URL
+
+### Production Mode (Local)
 1. Build the frontend:
 ```bash
 cd product-manager-ai
@@ -142,7 +177,7 @@ npm start
 ```
 GET /health
 ```
-Returns detailed service status, including credential configuration.
+Returns detailed service status, including credential configuration and environment type.
 
 ### RAG Query
 ```
@@ -186,10 +221,22 @@ Returns RAG Engine configuration and setup instructions.
 - **Max Output Tokens**: 65,535
 - **Similarity Top-K**: 20 (retrieval depth)
 
+### Authentication Types
+- **Cloud Run**: Automatic default credentials
+- **Local Development**: Service account JSON key
+- **Environment Detection**: Automatic detection of environment
+
 ## 🎯 Usage Guide
 
-### 1. Setup Credentials
-First, ensure Google Cloud credentials are configured:
+### 1. Setup Authentication
+Choose your deployment method:
+
+**For Cloud Run (Production):**
+```bash
+./setup-cloud-run.sh
+```
+
+**For Local Development:**
 ```bash
 cd backend
 ./setup-credentials.sh
@@ -230,9 +277,12 @@ cd backend
 # Check if credentials are set
 echo $GOOGLE_APPLICATION_CREDENTIALS
 
-# Run setup script
+# For local development
 cd backend
 ./setup-credentials.sh
+
+# For Cloud Run
+./setup-cloud-run.sh
 ```
 
 **RAG Engine Connection Error**
@@ -240,6 +290,11 @@ cd backend
 - Check RAG Engine and Corpus IDs
 - Ensure Vertex AI API is enabled
 - Run health check: `curl http://localhost:8080/health`
+
+**Cloud Run Authentication Issues**
+- Ensure service account has proper permissions
+- Check if APIs are enabled
+- Verify Cloud Run service account setup
 
 **File Upload Failures**
 - Check file size (max 50MB)
@@ -253,7 +308,7 @@ cd backend
 
 ### Debug Information
 - Backend logs show detailed request/response information
-- Health endpoint provides configuration details
+- Health endpoint provides configuration details and environment type
 - Status endpoint shows RAG Engine settings
 - Check `/health` endpoint for credential status
 
@@ -264,6 +319,7 @@ cd backend
 - Temporary files are automatically cleaned up
 - No sensitive data is stored locally
 - Service account keys should be kept secure
+- Cloud Run uses secure default credentials
 
 ## 📈 Performance Optimization
 
@@ -271,6 +327,7 @@ cd backend
 - File uploads are processed asynchronously
 - Response caching can be implemented for frequently asked questions
 - Consider implementing rate limiting for production use
+- Cloud Run provides automatic scaling
 
 ## 🤝 Contributing
 

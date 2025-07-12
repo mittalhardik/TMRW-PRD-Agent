@@ -21,11 +21,30 @@ app.use((req, res, next) => {
 });
 
 // Check Google Cloud credentials on startup
-const checkCredentials = () => {
+const checkCredentials = async () => {
+  const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
   const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   
+  if (isCloudRun) {
+    console.log('☁️  Running on Cloud Run - using default credentials');
+    try {
+      // Test authentication by trying to get a client
+      const auth = new GoogleAuth({ 
+        scopes: 'https://www.googleapis.com/auth/cloud-platform' 
+      });
+      const client = await auth.getClient();
+      const projectId = await auth.getProjectId();
+      console.log(`✅ Cloud Run authentication successful for project: ${projectId}`);
+      return true;
+    } catch (error) {
+      console.log(`❌ Cloud Run authentication failed: ${error.message}`);
+      return false;
+    }
+  }
+  
+  // Local development
   if (!credsPath) {
-    console.log('⚠️  GOOGLE_APPLICATION_CREDENTIALS not set');
+    console.log('⚠️  GOOGLE_APPLICATION_CREDENTIALS not set for local development');
     console.log('📝 For local development, run one of these setup scripts:');
     console.log('   ./setup-credentials.sh (creates new service account)');
     console.log('   ./setup-existing-credentials.sh (uses existing key file)');
@@ -46,7 +65,7 @@ const checkCredentials = () => {
       console.log('❌ Invalid service account key format');
       return false;
     }
-    console.log(`✅ Using credentials for: ${creds.client_email}`);
+    console.log(`✅ Using local credentials for: ${creds.client_email}`);
     return true;
   } catch (error) {
     console.log(`❌ Error reading credentials: ${error.message}`);
@@ -62,9 +81,11 @@ app.listen(port, () => {
   console.log(`📤 Document upload endpoint: http://localhost:${port}/rag/ingest`);
   
   // Check credentials after server starts
-  if (!checkCredentials()) {
-    console.log('⚠️  RAG Engine features may not work without proper credentials');
-  }
+  checkCredentials().then(hasCredentials => {
+    if (!hasCredentials) {
+      console.log('⚠️  RAG Engine features may not work without proper credentials');
+    }
+  });
 });
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
@@ -102,16 +123,20 @@ const upload = multer({
 });
 
 // Health check with detailed status
-app.get('/health', (req, res) => {
-  const credentialsStatus = checkCredentials();
+app.get('/health', async (req, res) => {
+  const credentialsStatus = await checkCredentials();
+  const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
+  
   const healthStatus = {
     status: credentialsStatus ? 'ok' : 'warning',
     timestamp: new Date().toISOString(),
     service: 'RAG Engine Backend',
     version: '1.0.0',
+    environment: isCloudRun ? 'cloud-run' : 'local',
     credentials: {
       configured: credentialsStatus,
-      path: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set'
+      type: isCloudRun ? 'default-cloud-run' : 'service-account',
+      path: isCloudRun ? 'default' : (process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set')
     },
     endpoints: {
       health: '/health',
@@ -132,7 +157,9 @@ app.get('/health', (req, res) => {
 });
 
 // Status endpoint for RAG Engine configuration
-app.get('/status', (req, res) => {
+app.get('/status', async (req, res) => {
+  const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
+  
   res.json({
     ragEngine: {
       corpus: RAG_CORPUS,
@@ -146,9 +173,16 @@ app.get('/status', (req, res) => {
       maxFileSize: '50MB',
       supportedTypes: ['PDF', 'DOC', 'DOCX', 'TXT', 'MD']
     },
+    environment: {
+      type: isCloudRun ? 'cloud-run' : 'local',
+      service: isCloudRun ? process.env.K_SERVICE : 'local-development'
+    },
     credentials: {
-      configured: checkCredentials(),
-      setupInstructions: [
+      configured: await checkCredentials(),
+      type: isCloudRun ? 'default-cloud-run' : 'service-account',
+      setupInstructions: isCloudRun ? [
+        'Cloud Run uses default credentials automatically'
+      ] : [
         'Run ./setup-credentials.sh to create a new service account',
         'Run ./setup-existing-credentials.sh to use existing key file',
         'Or set GOOGLE_APPLICATION_CREDENTIALS environment variable'
@@ -161,11 +195,17 @@ app.get('/status', (req, res) => {
 app.post('/rag/query', async (req, res) => {
   try {
     // Check credentials first
-    if (!checkCredentials()) {
+    const hasCredentials = await checkCredentials();
+    if (!hasCredentials) {
+      const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
       return res.status(500).json({
         error: 'Google Cloud credentials not configured',
         type: 'CREDENTIALS_ERROR',
-        setupInstructions: [
+        environment: isCloudRun ? 'cloud-run' : 'local',
+        setupInstructions: isCloudRun ? [
+          'Cloud Run should use default credentials automatically',
+          'Check if the service account has proper permissions'
+        ] : [
           'Run ./setup-credentials.sh to create a new service account',
           'Run ./setup-existing-credentials.sh to use existing key file',
           'Or set GOOGLE_APPLICATION_CREDENTIALS environment variable'
@@ -259,11 +299,17 @@ app.post('/rag/query', async (req, res) => {
 app.post('/rag/ingest', upload.single('document'), async (req, res) => {
   try {
     // Check credentials first
-    if (!checkCredentials()) {
+    const hasCredentials = await checkCredentials();
+    if (!hasCredentials) {
+      const isCloudRun = process.env.K_SERVICE || process.env.K_REVISION;
       return res.status(500).json({
         error: 'Google Cloud credentials not configured',
         type: 'CREDENTIALS_ERROR',
-        setupInstructions: [
+        environment: isCloudRun ? 'cloud-run' : 'local',
+        setupInstructions: isCloudRun ? [
+          'Cloud Run should use default credentials automatically',
+          'Check if the service account has proper permissions'
+        ] : [
           'Run ./setup-credentials.sh to create a new service account',
           'Run ./setup-existing-credentials.sh to use existing key file',
           'Or set GOOGLE_APPLICATION_CREDENTIALS environment variable'

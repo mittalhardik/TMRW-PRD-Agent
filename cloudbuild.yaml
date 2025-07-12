@@ -34,7 +34,9 @@ steps:
         '--region=us-central1',
         '--platform=managed',
         '--allow-unauthenticated',
-        '--port=8080'
+        '--port=8080',
+        '--set-env-vars=GCLOUD_PROJECT_ID=gen-lang-client-0723709535,GCLOUD_LOCATION=us-central1,GEMINI_MODEL=gemini-2.5-flash,VERTEX_RAG_CORPUS=projects/gen-lang-client-0723709535/locations/us-central1/ragCorpora/2305843009213693952,VERTEX_RAG_ENGINE=projects/gen-lang-client-0723709535/locations/us-central1/ragEngines/2305843009213693952',
+        '--service-account=rag-engine-service@gen-lang-client-0723709535.iam.gserviceaccount.com'
       ]
 options:
   logging: CLOUD_LOGGING_ONLY 
