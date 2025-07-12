@@ -75,20 +75,20 @@ const checkCredentials = async () => {
 
 // Check if React build files exist
 const checkReactBuild = () => {
-  const buildPath = path.join(__dirname, '../product-manager-ai/build');
+  const buildPath = path.join(__dirname, './product-manager-ai/build');
   const indexPath = path.join(buildPath, 'index.html');
   
   if (!fs.existsSync(buildPath)) {
     console.log('⚠️  React build directory not found');
     console.log('📝 To build the frontend, run:');
-    console.log('   cd product-manager-ai && npm run build');
+    console.log('   cd product-manager-ai && npm install && npm run build');
     return false;
   }
   
   if (!fs.existsSync(indexPath)) {
     console.log('⚠️  React build files not found');
     console.log('📝 To build the frontend, run:');
-    console.log('   cd product-manager-ai && npm run build');
+    console.log('   cd product-manager-ai && npm install && npm run build');
     return false;
   }
   
@@ -220,7 +220,9 @@ app.get('/status', async (req, res) => {
       buildInstructions: hasReactBuild ? null : [
         'cd product-manager-ai',
         'npm install',
-        'npm run build'
+        'npm run build',
+        '',
+        'For Cloud Run deployment, the frontend should be built automatically during the build process.'
       ]
     },
     credentials: {
@@ -484,7 +486,7 @@ app.use((error, req, res, next) => {
 });
 
 // Serve static files from the React app build directory (if it exists)
-const buildPath = path.join(__dirname, '../product-manager-ai/build');
+const buildPath = path.join(__dirname, './product-manager-ai/build');
 if (fs.existsSync(buildPath)) {
   app.use(express.static(buildPath));
   console.log('✅ Serving React app from build directory');
@@ -494,7 +496,7 @@ if (fs.existsSync(buildPath)) {
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
-  const indexPath = path.join(__dirname, '../product-manager-ai/build', 'index.html');
+  const indexPath = path.join(__dirname, './product-manager-ai/build', 'index.html');
   
   if (fs.existsSync(indexPath)) {
     try {
@@ -512,7 +514,9 @@ app.get('*', (req, res) => {
         'To build the frontend, run:',
         'cd product-manager-ai',
         'npm install',
-        'npm run build'
+        'npm run build',
+        '',
+        'For Cloud Run deployment, the frontend should be built automatically during the build process.'
       ],
       availableEndpoints: [
         'GET /health - Health check',

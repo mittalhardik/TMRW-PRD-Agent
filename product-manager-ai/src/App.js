@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrainCircuit, FileText, Search, Loader, Clipboard, Check, Book, Upload, File } from 'lucide-react';
+import MarkdownRenderer from './components/MarkdownRenderer';
 
 // --- Helper Components ---
 const IconWrapper = ({ children }) => <div className="bg-slate-800 p-2 rounded-md">{children}</div>;
@@ -64,15 +65,62 @@ const CopyButton = ({ text }) => {
     );
 };
 
-const OutputDisplay = ({ title, content }) => (
-  <div className="mt-6">
-    <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
-    <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 relative prose prose-invert max-w-none text-slate-300">
+const OutputDisplay = ({ title, content }) => {
+  const [renderMode, setRenderMode] = useState('auto'); // 'auto', 'markdown', 'html'
+  
+  // Function to detect if content contains markdown
+  const isMarkdown = (text) => {
+    const markdownPatterns = [
+      /^#+\s/m, // Headers
+      /\*\*.*?\*\*/, // Bold text
+      /\*.*?\*/, // Italic text
+      /\[.*?\]\(.*?\)/, // Links
+      /```[\s\S]*?```/, // Code blocks
+      /`.*?`/, // Inline code
+      /^\s*[-*+]\s/m, // Unordered lists
+      /^\s*\d+\.\s/m, // Ordered lists
+      /^\s*>\s/m, // Blockquotes
+      /\|.*\|.*\|/m, // Tables
+      /^\s*---/m, // Horizontal rules
+    ];
+    
+    return markdownPatterns.some(pattern => pattern.test(text));
+  };
+
+  const shouldRenderAsMarkdown = renderMode === 'markdown' || (renderMode === 'auto' && isMarkdown(content));
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-semibold text-white">{title}</h3>
+        {isMarkdown(content) && (
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-slate-400">Render as:</span>
+            <select
+              value={renderMode}
+              onChange={(e) => setRenderMode(e.target.value)}
+              className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-300"
+            >
+              <option value="auto">Auto</option>
+              <option value="markdown">Markdown</option>
+              <option value="html">HTML</option>
+            </select>
+          </div>
+        )}
+      </div>
+      <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 relative">
         <CopyButton text={content} />
-        <div dangerouslySetInnerHTML={{ __html: content }} />
+        {shouldRenderAsMarkdown ? (
+          <MarkdownRenderer content={content} />
+        ) : (
+          <div className="prose prose-invert max-w-none text-slate-300">
+            <div dangerouslySetInnerHTML={{ __html: content }} />
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const LoadingSpinner = ({text}) => (
     <div className="flex items-center justify-center space-x-2 p-4">
