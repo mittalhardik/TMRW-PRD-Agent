@@ -172,13 +172,13 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
   }
 });
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from the React app build directory
+app.use(express.static(path.join(__dirname, '../product-manager-ai/build')));
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
   try {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, '../product-manager-ai/build', 'index.html'));
   } catch (err) {
     console.error('Error in catch-all route:', err);
     res.status(500).send('Internal Server Error');

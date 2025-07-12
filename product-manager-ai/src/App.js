@@ -210,7 +210,8 @@ const RetrievalAgent = () => {
     setOutput('');
     setError('');
     try {
-      const response = await fetch('http://localhost:8080/rag/query', {
+      const backendUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080';
+      const response = await fetch(`${backendUrl}/rag/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
