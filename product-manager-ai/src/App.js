@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrainCircuit, FileText, Search, Loader, Clipboard, Check, Book } from 'lucide-react';
+import { BrainCircuit, FileText, Search, Loader, Clipboard, Check, Book, Upload, File } from 'lucide-react';
 
 // --- Helper Components ---
 const IconWrapper = ({ children }) => <div className="bg-slate-800 p-2 rounded-md">{children}</div>;
@@ -34,8 +34,6 @@ const TextArea = ({ title, value, onChange, placeholder, height = 'h-40' }) => (
     />
   </div>
 );
-
-// REMOVE: ToggleSwitch component definition
 
 const CopyButton = ({ text }) => {
     const [isCopied, setIsCopied] = useState(false);
@@ -83,50 +81,212 @@ const LoadingSpinner = ({text}) => (
     </div>
 );
 
-// --- RAG Pipeline Utilities ---
-// REMOVE: chunkText, embed, cosineSim, retrieveChunks, ragChunks, getRagContext, and related useEffect
+// --- RAG Engine Integration ---
+const useRAGEngine = () => {
+  const backendUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080';
+  
+  const queryRAG = async (query) => {
+    try {
+      const response = await fetch(`${backendUrl}/rag/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Error querying RAG Engine');
+      }
+      
+      const result = await response.json();
+      return result.result || 'No relevant information found.';
+    } catch (error) {
+      throw new Error(`RAG Engine error: ${error.message}`);
+    }
+  };
+
+  const uploadDocument = async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('document', file);
+
+      const response = await fetch(`${backendUrl}/rag/ingest`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Error uploading document');
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      throw new Error(`Upload error: ${error.message}`);
+    }
+  };
+
+  return { queryRAG, uploadDocument };
+};
+
+// --- Document Upload Component ---
+const DocumentUploadAgent = () => {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState('');
+  const { uploadDocument } = useRAGEngine();
+
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      setError('');
+      setUploadStatus('');
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+    
+    setIsUploading(true);
+    setError('');
+    setUploadStatus('');
+    
+    try {
+      await uploadDocument(selectedFile);
+      setUploadStatus(`Successfully uploaded ${selectedFile.name} to RAG Engine!`);
+      setSelectedFile(null);
+      // Reset file input
+      const fileInput = document.getElementById('file-input');
+      if (fileInput) fileInput.value = '';
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-white mb-2">Document Upload Agent</h2>
+      <p className="text-slate-400 mb-6">Upload documents to the RAG Engine to enhance the knowledge base for all agents.</p>
+      
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Select Document</label>
+          <div className="flex items-center space-x-4">
+            <input
+              id="file-input"
+              type="file"
+              onChange={handleFileSelect}
+              accept=".pdf,.doc,.docx,.txt,.md"
+              className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
+            />
+          </div>
+          {selectedFile && (
+            <div className="mt-2 flex items-center space-x-2 text-slate-300">
+              <File size={16} />
+              <span>{selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+            </div>
+          )}
+        </div>
+        
+        <button 
+          onClick={handleUpload} 
+          disabled={isUploading || !selectedFile} 
+          className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center"
+        >
+          {isUploading ? <Loader className="animate-spin mr-2" /> : <Upload className="mr-2" />}
+          {isUploading ? 'Uploading...' : 'Upload to RAG Engine'}
+        </button>
+        
+        {isUploading && <LoadingSpinner text="Uploading document to RAG Engine..." />}
+        {error && <div className="mt-4 text-red-400">{error}</div>}
+        {uploadStatus && <div className="mt-4 text-green-400">{uploadStatus}</div>}
+      </div>
+      
+      <div className="mt-6 p-4 bg-slate-800 rounded-lg">
+        <h3 className="text-lg font-semibold text-white mb-2">Supported File Types</h3>
+        <ul className="text-slate-300 text-sm space-y-1">
+          <li>• PDF documents (.pdf)</li>
+          <li>• Word documents (.doc, .docx)</li>
+          <li>• Text files (.txt)</li>
+          <li>• Markdown files (.md)</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
 
 // --- Main Agent Components ---
 
-const IdeationAgent = ({ generateTextResponse }) => {
+const IdeationAgent = () => {
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { queryRAG } = useRAGEngine();
 
   const handleGenerate = async () => {
     if (!prompt) return;
     setIsLoading(true);
     setOutput('');
-    const fullPrompt = `You are the "Ideation Agent," a strategic brainstorming partner for a Product Manager. Your goal is to generate creative and data-driven product/feature ideas. User's Request: "${prompt}". Your Task: 1. **Synthesize Findings:** Briefly summarize key findings from market trends, competitor analysis, and user needs. 2. **Generate Ideas:** Based on your synthesis, generate a list of 5-7 innovative feature ideas. For each idea, provide a brief justification linking it back to the insights you identified. 3. **Format:** Present your response in well-structured Markdown format.`;
-    const result = await generateTextResponse(fullPrompt);
-    setOutput(result);
-    setIsLoading(false);
+    setError('');
+    
+    try {
+      const ragQuery = `You are the "Ideation Agent," a strategic brainstorming partner for a Product Manager. Your goal is to generate creative and data-driven product/feature ideas. 
+
+User's Request: "${prompt}"
+
+Your Task: 
+1. **Synthesize Findings:** Briefly summarize key findings from market trends, competitor analysis, and user needs.
+2. **Generate Ideas:** Based on your synthesis, generate a list of 5-7 innovative feature ideas. For each idea, provide a brief justification linking it back to the insights you identified.
+3. **Format:** Present your response in well-structured Markdown format.
+
+Please provide a comprehensive analysis and ideation based on the available knowledge base.`;
+      
+      const result = await queryRAG(ragQuery);
+      setOutput(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-white mb-2">Ideation Agent</h2>
-      <p className="text-slate-400 mb-6">Your strategic partner for brainstorming. Provide a topic, and the agent will synthesize market trends and user needs to generate innovative ideas.</p>
+      <p className="text-slate-400 mb-6">Your strategic partner for brainstorming. Provide a topic, and the agent will synthesize market trends and user needs to generate innovative ideas using the RAG Engine.</p>
       <TextArea title="Brainstorming Prompt" value={prompt} onChange={setPrompt} placeholder="e.g., How can our project management tool better support remote-first teams?" height="h-28" />
       <button onClick={handleGenerate} disabled={isLoading || !prompt} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <BrainCircuit className="mr-2" />}
         Generate Ideas
       </button>
-      {isLoading && <LoadingSpinner />}
+      {isLoading && <LoadingSpinner text="Analyzing with RAG Engine..." />}
+      {error && <div className="mt-4 text-red-400">{error}</div>}
       {output && <OutputDisplay title="Ideation Report" content={output} />}
     </div>
   );
 };
 
-const AuthoringAgent = ({ generateTextResponse }) => {
+const AuthoringAgent = () => {
   const [userPrompt, setUserPrompt] = useState('');
   const [meetingNotes, setMeetingNotes] = useState('');
   const [userStories, setUserStories] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
-    setMeetingNotes(`Q2 Planning Meeting Notes:\n- John (UX): Users are confused by the current reporting dashboard. It's too cluttered.\n- Sarah (Eng): We need to build a more flexible data filtering system.\n- PM: The goal for Q3 is to increase user engagement with reports by 25%.\n- Key takeaway: Simplify the UI and add powerful filtering.`);
+    setMeetingNotes(`Q2 Planning Meeting Notes:
+- John (UX): Users are confused by the current reporting dashboard. It's too cluttered.
+- Sarah (Eng): We need to build a more flexible data filtering system.
+- PM: The goal for Q3 is to increase user engagement with reports by 25%.
+- Key takeaway: Simplify the UI and add powerful filtering.`);
     setUserStories('');
   }, []);
 
@@ -134,16 +294,40 @@ const AuthoringAgent = ({ generateTextResponse }) => {
     if (!meetingNotes && !userStories && !userPrompt) return;
     setIsLoading(true);
     setOutput('');
-    const fullPrompt = `You are the \"PRD Authoring Agent.\" Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources.\n\n**Source 1: User Instructions**\n\n${userPrompt}\n\n**Source 2: Meeting Notes**\n\n${meetingNotes}\n\n**Source 3: User Stories**\n\n${userStories}\n\n**Your Task:**\n1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions. 2. **Final Output:** Generate the complete, filled-out PRD in Markdown format.`;
-    const result = await generateTextResponse(fullPrompt);
-    setOutput(result);
-    setIsLoading(false);
+    setError('');
+    
+    try {
+      const ragQuery = `You are the "PRD Authoring Agent." Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources and leveraging the knowledge base.
+
+**Source 1: User Instructions**
+${userPrompt}
+
+**Source 2: Meeting Notes**
+${meetingNotes}
+
+**Source 3: User Stories**
+${userStories}
+
+**Your Task:**
+1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions.
+2. **Leverage Knowledge Base:** Use the available knowledge base to enhance the PRD with best practices, industry standards, and relevant examples.
+3. **Final Output:** Generate the complete, filled-out PRD in Markdown format.
+
+Please create a comprehensive PRD that incorporates insights from the knowledge base.`;
+      
+      const result = await queryRAG(ragQuery);
+      setOutput(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-white mb-2">PRD Authoring Agent</h2>
-      <p className="text-slate-400 mb-6">Automate the creation of your first PRD draft. Provide the source materials and additional instructions, and the agent will compile them into a structured document.</p>
+      <p className="text-slate-400 mb-6">Automate the creation of your first PRD draft. Provide the source materials and additional instructions, and the agent will compile them into a structured document using the RAG Engine.</p>
       <div className="space-y-4">
         <TextArea title="User Prompt (Additional Instructions)" value={userPrompt} onChange={setUserPrompt} placeholder="Add any special instructions or context for the PRD here." />
         <TextArea title="Source: Meeting Notes / Transcripts" value={meetingNotes} onChange={setMeetingNotes} placeholder="Paste relevant meeting notes, brainstorming session outputs, etc." />
@@ -153,37 +337,82 @@ const AuthoringAgent = ({ generateTextResponse }) => {
         {isLoading ? <Loader className="animate-spin mr-2" /> : <FileText className="mr-2" />}
         Draft PRD
       </button>
-      {isLoading && <LoadingSpinner />}
+      {isLoading && <LoadingSpinner text="Creating PRD with RAG Engine..." />}
+      {error && <div className="mt-4 text-red-400">{error}</div>}
       {output && <OutputDisplay title="Generated PRD Draft" content={output} />}
     </div>
   );
 };
 
-const ReviewAgent = ({ generateTextResponse }) => {
+const ReviewAgent = () => {
   const [prd, setPrd] = useState('');
   const [reference, setReference] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
-    setPrd(`## PRD: User Profile Redesign\n\n**Problem Statement:** Our user profiles look outdated and don't provide enough value to users.\n\n**Success Metrics:**\n- Increase time spent on profile pages by 15%.\n- Increase number of profile fields filled out by 20%.\n\n**Features:**\n- Add a customizable banner image.\n- Allow users to add a project portfolio section.`);
-    setReference(`## Q1 User Research Summary\n\n**Key Findings:**\n1. **Discoverability is low:** Users report they have a very hard time finding specific information on other users' profiles. "It's a wall of text," one user said.\n2. **Trust Issues:** Users don't trust profiles that are incomplete. They want to see verification badges.\n3. **Goal-Oriented:** Users visit profiles to accomplish a specific task, not to browse.`);
+    setPrd(`## PRD: User Profile Redesign
+
+**Problem Statement:** Our user profiles look outdated and don't provide enough value to users.
+
+**Success Metrics:**
+- Increase time spent on profile pages by 15%.
+- Increase number of profile fields filled out by 20%.
+
+**Features:**
+- Add a customizable banner image.
+- Allow users to add a project portfolio section.`);
+    setReference(`## Q1 User Research Summary
+
+**Key Findings:**
+1. **Discoverability is low:** Users report they have a very hard time finding specific information on other users' profiles. "It's a wall of text," one user said.
+2. **Trust Issues:** Users don't trust profiles that are incomplete. They want to see verification badges.
+3. **Goal-Oriented:** Users visit profiles to accomplish a specific task, not to browse.`);
   }, []);
 
   const handleGenerate = async () => {
     if (!prd || !reference) return;
     setIsLoading(true);
     setOutput('');
-    const fullPrompt = `You are the "PRD Review Agent," an expert product Manager. Your job is to perform a quality check on a PRD draft. \n\n**Context A: The PRD for Review**\n\`\`\`markdown\n${prd}\n\`\`\`\n\n**Context B: The Reference Document (User Research)**\n\`\`\`\n${reference}\n\`\`\`\n\n**Your Task:**\nGenerate a detailed PRD review.`;
-    const result = await generateTextResponse(fullPrompt);
-    setOutput(result);
-    setIsLoading(false);
+    setError('');
+    
+    try {
+      const ragQuery = `You are the "PRD Review Agent," an expert Product Manager. Your job is to perform a quality check on a PRD draft using the knowledge base for best practices and industry standards.
+
+**Context A: The PRD for Review**
+\`\`\`markdown
+${prd}
+\`\`\`
+
+**Context B: The Reference Document (User Research)**
+\`\`\`
+${reference}
+\`\`\`
+
+**Your Task:**
+Generate a detailed PRD review that includes:
+1. **Quality Assessment:** Evaluate the PRD against industry best practices
+2. **Alignment Check:** Verify consistency with user research and reference materials
+3. **Completeness Review:** Identify missing elements or gaps
+4. **Recommendations:** Provide specific improvements based on the knowledge base
+
+Please provide a comprehensive review leveraging the available knowledge base.`;
+      
+      const result = await queryRAG(ragQuery);
+      setOutput(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-white mb-2">PRD Review Agent</h2>
-      <p className="text-slate-400 mb-6">Your quality assurance partner. The agent analyzes a PRD for consistency, completeness, and alignment with strategy and best practices.</p>
+      <p className="text-slate-400 mb-6">Your quality assurance partner. The agent analyzes a PRD for consistency, completeness, and alignment with strategy and best practices using the RAG Engine.</p>
       <div className="space-y-4">
         <TextArea title="PRD to Review" value={prd} onChange={setPrd} placeholder="Paste the PRD content you want to have reviewed." />
         <TextArea title="Reference Document (e.g., User Research)" value={reference} onChange={setReference} placeholder="Paste the content of the document you want to compare the PRD against." />
@@ -192,7 +421,8 @@ const ReviewAgent = ({ generateTextResponse }) => {
         {isLoading ? <Loader className="animate-spin mr-2" /> : <Search className="mr-2" />}
         Review PRD
       </button>
-      {isLoading && <LoadingSpinner />}
+      {isLoading && <LoadingSpinner text="Reviewing with RAG Engine..." />}
+      {error && <div className="mt-4 text-red-400">{error}</div>}
       {output && <OutputDisplay title="PRD Review Analysis" content={output} />}
     </div>
   );
@@ -203,31 +433,22 @@ const RetrievalAgent = () => {
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const { queryRAG } = useRAGEngine();
 
   const handleRetrieve = async () => {
     if (!query) return;
     setIsLoading(true);
     setOutput('');
     setError('');
+    
     try {
-      const backendUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080';
-      const response = await fetch(`${backendUrl}/rag/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      });
-      if (!response.ok) {
-        const result = await response.json();
-        setError(result.error || 'Error retrieving from RAG Engine');
-        setIsLoading(false);
-        return;
-      }
-      const result = await response.json();
-      setOutput(result.result || 'No relevant sections found.');
+      const result = await queryRAG(query);
+      setOutput(result);
     } catch (err) {
-      setError('Failed to contact backend: ' + err.message);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   return (
@@ -249,49 +470,19 @@ const RetrievalAgent = () => {
 // --- Main App Component ---
 export default function App() {
   const [activeAgent, setActiveAgent] = useState('ideation');
-  // Remove all RAG state and local context logic
-
-  // Update generateTextResponse to use only Gemini API (or backend if needed)
-  const GEMINI_API_KEY = "AIzaSyBN6nV0ste3cCs0ExRpWxGewJevL_dkYRM";
-  const GEMINI_MODEL = "gemini-2.5-flash";
-  const generateTextResponse = async (prompt) => {
-    const apiKey = GEMINI_API_KEY;
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.4, topK: 1, topP: 1, maxOutputTokens: 32768 },
-    };
-    try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) return `Error: The model returned an error. Status: ${response.status}.`;
-      const result = await response.json();
-      if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
-        return result.candidates[0].content.parts[0].text;
-      } else {
-        if (result.promptFeedback && result.promptFeedback.blockReason) {
-          return `Content was blocked. Reason: ${result.promptFeedback.blockReason}.`;
-        }
-        return "The model returned an empty response.";
-      }
-    } catch (error) {
-      return `An error occurred while contacting the AI agent: ${error.message}`;
-    }
-  };
 
   const renderActiveAgent = () => {
     switch (activeAgent) {
       case 'ideation':
-        return <IdeationAgent generateTextResponse={generateTextResponse} />;
+        return <IdeationAgent />;
       case 'authoring':
-        return <AuthoringAgent generateTextResponse={generateTextResponse} />;
+        return <AuthoringAgent />;
       case 'review':
-        return <ReviewAgent generateTextResponse={generateTextResponse} />;
+        return <ReviewAgent />;
       case 'retrieval':
         return <RetrievalAgent />;
+      case 'upload':
+        return <DocumentUploadAgent />;
       default:
         return null;
     }
@@ -313,10 +504,11 @@ export default function App() {
             <div>
                 <h2 className="text-xl font-semibold text-white mb-4">Choose Your Agent</h2>
                 <div className="space-y-4">
-                    <AgentCard title="Ideation Agent" description="Brainstorm new features and ideas." icon={<BrainCircuit size={24} className="text-purple-400" />} onClick={() => setActiveAgent('ideation')} isActive={activeAgent === 'ideation'} />
-                    <AgentCard title="PRD Authoring Agent" description="Draft PRDs from source materials." icon={<FileText size={24} className="text-sky-400" />} onClick={() => setActiveAgent('authoring')} isActive={activeAgent === 'authoring'} />
-                    <AgentCard title="PRD Review Agent" description="Analyze PRDs for quality and alignment." icon={<Search size={24} className="text-amber-400" />} onClick={() => setActiveAgent('review')} isActive={activeAgent === 'review'} />
+                    <AgentCard title="Ideation Agent" description="Brainstorm new features and ideas using RAG Engine." icon={<BrainCircuit size={24} className="text-purple-400" />} onClick={() => setActiveAgent('ideation')} isActive={activeAgent === 'ideation'} />
+                    <AgentCard title="PRD Authoring Agent" description="Draft PRDs from source materials using RAG Engine." icon={<FileText size={24} className="text-sky-400" />} onClick={() => setActiveAgent('authoring')} isActive={activeAgent === 'authoring'} />
+                    <AgentCard title="PRD Review Agent" description="Analyze PRDs for quality and alignment using RAG Engine." icon={<Search size={24} className="text-amber-400" />} onClick={() => setActiveAgent('review')} isActive={activeAgent === 'review'} />
                     <AgentCard title="Retrieval Agent" description="Retrieve relevant sections from RAG Engine." icon={<Book size={24} className="text-green-400" />} onClick={() => setActiveAgent('retrieval')} isActive={activeAgent === 'retrieval'} />
+                    <AgentCard title="Document Upload" description="Upload documents to enhance the RAG Engine knowledge base." icon={<Upload size={24} className="text-orange-400" />} onClick={() => setActiveAgent('upload')} isActive={activeAgent === 'upload'} />
                 </div>
             </div>
           </aside>
@@ -325,7 +517,7 @@ export default function App() {
           </div>
         </main>
         <footer className="text-center mt-12 text-slate-500 text-sm">
-            <p>This is a functional prototype. All agent responses are generated by the Gemini API and may require verification.</p>
+            <p>This is a functional prototype. All agent responses are generated by the RAG Engine and may require verification.</p>
         </footer>
       </div>
     </div>

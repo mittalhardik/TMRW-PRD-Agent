@@ -13,17 +13,59 @@ const { GoogleAuth } = require('google-auth-library');
 
 const app = express();
 
-// Log all incoming requests for debugging
+// Enhanced logging middleware
 app.use((req, res, next) => {
-  console.log('Incoming request:', req.method, req.url);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.url} - ${req.ip}`);
   next();
 });
 
+// Check Google Cloud credentials on startup
+const checkCredentials = () => {
+  const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  
+  if (!credsPath) {
+    console.log('⚠️  GOOGLE_APPLICATION_CREDENTIALS not set');
+    console.log('📝 For local development, run one of these setup scripts:');
+    console.log('   ./setup-credentials.sh (creates new service account)');
+    console.log('   ./setup-existing-credentials.sh (uses existing key file)');
+    console.log('📖 Or set the environment variable manually:');
+    console.log('   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json');
+    return false;
+  }
+  
+  if (!fs.existsSync(credsPath)) {
+    console.log(`❌ Credentials file not found: ${credsPath}`);
+    console.log('📝 Please check the file path and try again');
+    return false;
+  }
+  
+  try {
+    const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+    if (!creds.client_email || !creds.private_key) {
+      console.log('❌ Invalid service account key format');
+      return false;
+    }
+    console.log(`✅ Using credentials for: ${creds.client_email}`);
+    return true;
+  } catch (error) {
+    console.log(`❌ Error reading credentials: ${error.message}`);
+    return false;
+  }
+};
+
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
-  console.log(`Listening on port ${port}`);
+  console.log(`🚀 RAG Engine Backend listening on port ${port}`);
+  console.log(`📊 Health check available at: http://localhost:${port}/health`);
+  console.log(`🔍 RAG Query endpoint: http://localhost:${port}/rag/query`);
+  console.log(`📤 Document upload endpoint: http://localhost:${port}/rag/ingest`);
+  
+  // Check credentials after server starts
+  if (!checkCredentials()) {
+    console.log('⚠️  RAG Engine features may not work without proper credentials');
+  }
 });
-
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
 const LOCATION = process.env.GCLOUD_LOCATION || 'us-central1';
@@ -36,21 +78,113 @@ const RAG_ENGINE = process.env.VERTEX_RAG_ENGINE || 'projects/gen-lang-client-07
 app.use(cors());
 app.use(express.json());
 
-// Set up multer for file uploads
-const upload = multer({ dest: 'uploads/' });
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+// Set up multer for file uploads with enhanced configuration
+const upload = multer({ 
+  dest: 'uploads/',
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'text/markdown'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file type: ${file.mimetype}. Supported types: PDF, DOC, DOCX, TXT, MD`));
+    }
+  }
 });
 
-// RAG Query Endpoint
+// Health check with detailed status
+app.get('/health', (req, res) => {
+  const credentialsStatus = checkCredentials();
+  const healthStatus = {
+    status: credentialsStatus ? 'ok' : 'warning',
+    timestamp: new Date().toISOString(),
+    service: 'RAG Engine Backend',
+    version: '1.0.0',
+    credentials: {
+      configured: credentialsStatus,
+      path: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set'
+    },
+    endpoints: {
+      health: '/health',
+      ragQuery: '/rag/query',
+      ragIngest: '/rag/ingest',
+      status: '/status'
+    },
+    configuration: {
+      projectId: PROJECT_ID,
+      location: LOCATION,
+      model: MODEL,
+      ragCorpus: RAG_CORPUS,
+      ragEngine: RAG_ENGINE
+    }
+  };
+  
+  res.json(healthStatus);
+});
+
+// Status endpoint for RAG Engine configuration
+app.get('/status', (req, res) => {
+  res.json({
+    ragEngine: {
+      corpus: RAG_CORPUS,
+      engine: RAG_ENGINE,
+      model: MODEL,
+      location: LOCATION,
+      project: PROJECT_ID
+    },
+    uploads: {
+      directory: 'uploads/',
+      maxFileSize: '50MB',
+      supportedTypes: ['PDF', 'DOC', 'DOCX', 'TXT', 'MD']
+    },
+    credentials: {
+      configured: checkCredentials(),
+      setupInstructions: [
+        'Run ./setup-credentials.sh to create a new service account',
+        'Run ./setup-existing-credentials.sh to use existing key file',
+        'Or set GOOGLE_APPLICATION_CREDENTIALS environment variable'
+      ]
+    }
+  });
+});
+
+// Enhanced RAG Query Endpoint
 app.post('/rag/query', async (req, res) => {
   try {
-    const { query } = req.body;
-    if (!query) {
-      return res.status(400).json({ error: 'Missing query in request body.' });
+    // Check credentials first
+    if (!checkCredentials()) {
+      return res.status(500).json({
+        error: 'Google Cloud credentials not configured',
+        type: 'CREDENTIALS_ERROR',
+        setupInstructions: [
+          'Run ./setup-credentials.sh to create a new service account',
+          'Run ./setup-existing-credentials.sh to use existing key file',
+          'Or set GOOGLE_APPLICATION_CREDENTIALS environment variable'
+        ],
+        timestamp: new Date().toISOString()
+      });
     }
+
+    const { query } = req.body;
+    
+    if (!query) {
+      return res.status(400).json({ 
+        error: 'Missing query in request body.',
+        required: 'query field',
+        example: { query: 'What are the key features of our product?' }
+      });
+    }
+
+    console.log(`🔍 Processing RAG query: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`);
 
     // System instruction and tools setup
     const siText1 = { text: `Perform a Comprehensive Review of the given 'Product Requirement Document' using the given Context.\nFlag any unwanted or incorrect text.\nGenerate an Improved and Comprehensive PRD.` };
@@ -94,27 +228,65 @@ app.post('/rag/query', async (req, res) => {
     const msg = { text: query };
     let result = '';
     const response = await chat.sendMessageStream({ message: [msg] });
+    
+    console.log('📤 Streaming response from RAG Engine...');
     for await (const chunk of response) {
       if (chunk.text) {
         result += chunk.text;
       }
     }
-    res.json({ result });
+    
+    console.log(`✅ RAG query completed. Response length: ${result.length} characters`);
+    res.json({ 
+      result,
+      metadata: {
+        queryLength: query.length,
+        responseLength: result.length,
+        timestamp: new Date().toISOString()
+      }
+    });
   } catch (error) {
-    console.error('RAG Query Error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    console.error('❌ RAG Query Error:', error);
+    res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      type: 'RAG_QUERY_ERROR',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
-// Document Ingestion Endpoint
+// Enhanced Document Ingestion Endpoint
 app.post('/rag/ingest', upload.single('document'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded.' });
+    // Check credentials first
+    if (!checkCredentials()) {
+      return res.status(500).json({
+        error: 'Google Cloud credentials not configured',
+        type: 'CREDENTIALS_ERROR',
+        setupInstructions: [
+          'Run ./setup-credentials.sh to create a new service account',
+          'Run ./setup-existing-credentials.sh to use existing key file',
+          'Or set GOOGLE_APPLICATION_CREDENTIALS environment variable'
+        ],
+        timestamp: new Date().toISOString()
+      });
     }
+
+    if (!req.file) {
+      return res.status(400).json({ 
+        error: 'No file uploaded.',
+        required: 'document file',
+        supportedTypes: ['PDF', 'DOC', 'DOCX', 'TXT', 'MD']
+      });
+    }
+    
     const filePath = req.file.path;
     const fileName = req.file.originalname;
     const mimeType = req.file.mimetype;
+    const fileSize = req.file.size;
+    
+    console.log(`📤 Processing document upload: ${fileName} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
+    
     const fileBuffer = fs.readFileSync(filePath);
 
     // Get access token
@@ -137,9 +309,9 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     ]);
 
     // Log RAG Engine resource and endpoint
-    console.log('RAG_ENGINE:', RAG_ENGINE);
+    console.log('🔧 RAG_ENGINE:', RAG_ENGINE);
     const endpointUrl = `https://us-central1-aiplatform.googleapis.com/v1beta/${RAG_ENGINE}:ingestDocuments`;
-    console.log('Ingest endpoint:', endpointUrl);
+    console.log('📡 Ingest endpoint:', endpointUrl);
 
     // Call Vertex AI RAG Engine Ingest API
     let response, text, result;
@@ -156,20 +328,67 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
       result = JSON.parse(text);
     } catch (jsonErr) {
       // If JSON parsing fails, log and return the raw response text
-      console.error('Non-JSON response from Vertex AI:', text);
+      console.error('❌ Non-JSON response from Vertex AI:', text);
       fs.unlinkSync(filePath);
-      return res.status(500).json({ error: 'Non-JSON response from Vertex AI', details: text });
+      return res.status(500).json({ 
+        error: 'Non-JSON response from Vertex AI', 
+        details: text,
+        type: 'VERTEX_AI_ERROR'
+      });
     }
+    
     // Clean up uploaded file
     fs.unlinkSync(filePath);
+    
     if (!response.ok) {
-      return res.status(500).json({ error: result.error || 'Failed to ingest document.', details: result });
+      console.error('❌ Document ingestion failed:', result);
+      return res.status(500).json({ 
+        error: result.error || 'Failed to ingest document.', 
+        details: result,
+        type: 'INGESTION_ERROR'
+      });
     }
-    res.json({ status: 'success', result });
+    
+    console.log(`✅ Document successfully ingested: ${fileName}`);
+    res.json({ 
+      status: 'success', 
+      result,
+      metadata: {
+        fileName,
+        fileSize,
+        mimeType,
+        timestamp: new Date().toISOString()
+      }
+    });
   } catch (error) {
-    console.error('Document Ingestion Error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    console.error('❌ Document Ingestion Error:', error);
+    
+    // Clean up file if it exists
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        console.error('Failed to cleanup uploaded file:', cleanupError);
+      }
+    }
+    
+    res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      type: 'INGESTION_ERROR',
+      timestamp: new Date().toISOString()
+    });
   }
+});
+
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('❌ Unhandled error:', error);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: error.message,
+    type: 'UNHANDLED_ERROR',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Serve static files from the React app build directory
@@ -180,7 +399,7 @@ app.get('*', (req, res) => {
   try {
     res.sendFile(path.join(__dirname, '../product-manager-ai/build', 'index.html'));
   } catch (err) {
-    console.error('Error in catch-all route:', err);
+    console.error('❌ Error in catch-all route:', err);
     res.status(500).send('Internal Server Error');
   }
 }); 
