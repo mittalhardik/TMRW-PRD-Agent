@@ -176,7 +176,7 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
-app.get('/:path(*)', (req, res) => {
+app.get('*', (req, res) => {
   try {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   } catch (err) {
