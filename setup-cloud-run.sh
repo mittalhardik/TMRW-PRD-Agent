@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Cloud Run Setup Script for Automatic Authentication
-echo "☁️  Setting up Cloud Run service account for automatic authentication..."
+echo "☁️  Setting up Cloud Run default service account for automatic authentication..."
 
 # Check if gcloud is installed
 if ! command -v gcloud &> /dev/null; then
@@ -21,35 +21,28 @@ PROJECT_ID="gen-lang-client-0723709535"
 echo "📁 Setting project to: $PROJECT_ID"
 gcloud config set project $PROJECT_ID
 
-# Create service account for Cloud Run if it doesn't exist
-SERVICE_ACCOUNT_NAME="rag-engine-service"
-SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+# Get the default Cloud Run service account
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+DEFAULT_SA="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
 
-echo "🔑 Checking for Cloud Run service account: $SERVICE_ACCOUNT_EMAIL"
+echo "🔑 Using default Cloud Run service account: $DEFAULT_SA"
 
-if ! gcloud iam service-accounts describe $SERVICE_ACCOUNT_EMAIL &> /dev/null; then
-    echo "📝 Creating Cloud Run service account..."
-    gcloud iam service-accounts create $SERVICE_ACCOUNT_NAME \
-        --display-name="RAG Engine Cloud Run Service Account" \
-        --description="Service account for Cloud Run RAG Engine backend"
-fi
-
-# Grant necessary permissions for Cloud Run
-echo "🔐 Granting permissions to Cloud Run service account..."
+# Grant necessary permissions to the default service account
+echo "🔐 Granting permissions to default Cloud Run service account..."
 gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
+    --member="serviceAccount:$DEFAULT_SA" \
     --role="roles/aiplatform.user"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
+    --member="serviceAccount:$DEFAULT_SA" \
     --role="roles/storage.objectViewer"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
+    --member="serviceAccount:$DEFAULT_SA" \
     --role="roles/logging.logWriter"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
+    --member="serviceAccount:$DEFAULT_SA" \
     --role="roles/monitoring.metricWriter"
 
 # Enable required APIs
@@ -58,8 +51,8 @@ gcloud services enable aiplatform.googleapis.com
 gcloud services enable cloudbuild.googleapis.com
 gcloud services enable run.googleapis.com
 
-echo "✅ Cloud Run service account setup complete!"
-echo "📧 Service account: $SERVICE_ACCOUNT_EMAIL"
+echo "✅ Cloud Run default service account setup complete!"
+echo "📧 Service account: $DEFAULT_SA"
 echo "🔧 Permissions granted:"
 echo "   - AI Platform User"
 echo "   - Storage Object Viewer"

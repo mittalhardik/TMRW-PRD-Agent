@@ -76,8 +76,11 @@ npm install
 Cloud Run uses automatic authentication with default credentials:
 
 ```bash
-# Set up Cloud Run service account
+# Set up Cloud Run permissions
 ./setup-cloud-run.sh
+
+# Set up Cloud Build permissions (for deployment)
+./setup-cloud-build-permissions.sh
 
 # Deploy to Cloud Run
 gcloud run deploy tmrw-prd-agent \
@@ -139,12 +142,17 @@ npm start
 4. Open http://localhost:3000 in your browser
 
 ### Cloud Run Deployment
-1. Set up Cloud Run service account:
+1. Set up Cloud Run permissions:
 ```bash
 ./setup-cloud-run.sh
 ```
 
-2. Deploy to Cloud Run:
+2. Set up Cloud Build permissions:
+```bash
+./setup-cloud-build-permissions.sh
+```
+
+3. Deploy to Cloud Run:
 ```bash
 gcloud run deploy tmrw-prd-agent \
   --source=backend \
@@ -154,7 +162,7 @@ gcloud run deploy tmrw-prd-agent \
   --port=8080
 ```
 
-3. Access the application at the provided Cloud Run URL
+4. Access the application at the provided Cloud Run URL
 
 ### Production Mode (Local)
 1. Build the frontend:
@@ -234,6 +242,7 @@ Choose your deployment method:
 **For Cloud Run (Production):**
 ```bash
 ./setup-cloud-run.sh
+./setup-cloud-build-permissions.sh
 ```
 
 **For Local Development:**
@@ -283,6 +292,12 @@ cd backend
 
 # For Cloud Run
 ./setup-cloud-run.sh
+```
+
+**Cloud Build Permission Denied**
+```bash
+# Set up Cloud Build permissions
+./setup-cloud-build-permissions.sh
 ```
 
 **RAG Engine Connection Error**
