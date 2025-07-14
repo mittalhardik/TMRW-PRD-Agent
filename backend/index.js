@@ -423,7 +423,7 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
       try { await storage.bucket(bucketName).file(gcsFileName).delete(); } catch (e) {}
       return res.status(500).json({ 
         error: 'Non-JSON response from Vertex AI', 
-        details: text,
+        details: typeof text === 'string' ? text : JSON.stringify(text),
         type: 'VERTEX_AI_ERROR'
       });
     }
@@ -436,8 +436,8 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     if (!response.ok) {
       console.error('❌ Document ingestion failed:', result);
       return res.status(500).json({ 
-        error: result.error || 'Failed to ingest document.', 
-        details: result,
+        error: typeof result.error === 'string' ? result.error : JSON.stringify(result.error) || 'Failed to ingest document.', 
+        details: typeof result === 'string' ? result : JSON.stringify(result),
         type: 'INGESTION_ERROR'
       });
     }
