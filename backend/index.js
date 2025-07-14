@@ -398,8 +398,10 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     const corpusId = 'projects/gen-lang-client-0723709535/locations/us-central1/ragCorpora/2305843009213693952';
     const importUrl = `https://us-central1-aiplatform.googleapis.com/v1beta1/${corpusId}/ragFiles:import`;
     const importBody = {
-      gcsSource: {
-        uris: [gcsUri]
+      importConfig: {
+        gcsSource: {
+          uris: [gcsUri]
+        }
       }
     };
 
