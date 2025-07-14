@@ -10,6 +10,7 @@ const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 const fs = require('fs');
 const { GoogleAuth } = require('google-auth-library');
+const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 
@@ -380,60 +381,58 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     const fileSize = req.file.size;
     
     console.log(`📤 Processing document upload: ${fileName} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
-    
-    const fileBuffer = fs.readFileSync(filePath);
 
-    // Get access token
+    // 1. Upload file to GCS
+    const bucketName = 'tmrw_prd_agent';
+    const gcsFileName = `${Date.now()}_${fileName}`;
+    const storage = new Storage();
+    await storage.bucket(bucketName).upload(filePath, { destination: gcsFileName });
+    const gcsUri = `gs://${bucketName}/${gcsFileName}`;
+    console.log('✅ Uploaded to GCS:', gcsUri);
+
+    // 2. Call Vertex AI RAG API to import the file
     const auth = new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' });
     const client = await auth.getClient();
     const accessToken = await client.getAccessToken();
 
-    // Prepare multipart request for Vertex AI RAG Engine Ingest API
-    const boundary = '----WebKitFormBoundary' + Math.random().toString(16).slice(2);
-    const metadata = JSON.stringify({
-      documentId: fileName,
-      mimeType: mimeType,
-      displayName: fileName
-    });
-    const multipartBody = Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`),
-      Buffer.from(`--${boundary}\r\nContent-Type: ${mimeType}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\n\r\n`),
-      fileBuffer,
-      Buffer.from(`\r\n--${boundary}--\r\n`)
-    ]);
+    const corpusId = 'projects/gen-lang-client-0723709535/locations/us-central1/ragCorpora/2305843009213693952';
+    const importUrl = `https://us-central1-aiplatform.googleapis.com/v1beta1/${corpusId}/ragFiles:import`;
+    const importBody = {
+      gcsSource: {
+        uris: [gcsUri]
+      }
+    };
 
-    // Log RAG Engine resource and endpoint
-    console.log('🔧 RAG_ENGINE:', RAG_ENGINE);
-    const endpointUrl = `https://us-central1-aiplatform.googleapis.com/v1beta/${RAG_ENGINE}:ingestDocuments`;
-    console.log('📡 Ingest endpoint:', endpointUrl);
-
-    // Call Vertex AI RAG Engine Ingest API
-    let response, text, result;
-    response = await fetch(endpointUrl, {
+    const response = await fetch(importUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken.token || accessToken}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`
+        'Content-Type': 'application/json'
       },
-      body: multipartBody
+      body: JSON.stringify(importBody)
     });
-    text = await response.text();
+    const text = await response.text();
+    let result;
     try {
       result = JSON.parse(text);
     } catch (jsonErr) {
       // If JSON parsing fails, log and return the raw response text
       console.error('❌ Non-JSON response from Vertex AI:', text);
       fs.unlinkSync(filePath);
+      // Optionally, delete the file from GCS as well
+      try { await storage.bucket(bucketName).file(gcsFileName).delete(); } catch (e) {}
       return res.status(500).json({ 
         error: 'Non-JSON response from Vertex AI', 
         details: text,
         type: 'VERTEX_AI_ERROR'
       });
     }
-    
+
     // Clean up uploaded file
     fs.unlinkSync(filePath);
-    
+    // Optionally, delete the file from GCS after import
+    try { await storage.bucket(bucketName).file(gcsFileName).delete(); } catch (e) {}
+
     if (!response.ok) {
       console.error('❌ Document ingestion failed:', result);
       return res.status(500).json({ 
@@ -442,7 +441,7 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
         type: 'INGESTION_ERROR'
       });
     }
-    
+
     console.log(`✅ Document successfully ingested: ${fileName}`);
     res.json({ 
       status: 'success', 
@@ -456,7 +455,6 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Document Ingestion Error:', error);
-    
     // Clean up file if it exists
     if (req.file && req.file.path) {
       try {
@@ -465,7 +463,6 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
         console.error('Failed to cleanup uploaded file:', cleanupError);
       }
     }
-    
     res.status(500).json({ 
       error: error.message || 'Internal server error',
       type: 'INGESTION_ERROR',
