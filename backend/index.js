@@ -293,14 +293,14 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     }
 
     // Pass files to Gemini as part of the prompt (multi-modal input)
-    let geminiMessage = [];
+    let geminiParts = [];
     if (files.length > 0) {
       for (const file of files) {
         const fileBuffer = fs.readFileSync(file.path);
-        geminiMessage.push({ data: fileBuffer, mimeType: file.mimetype });
+        geminiParts.push({ data: fileBuffer, mimeType: file.mimetype });
       }
     }
-    geminiMessage.push({ text: prompt });
+    geminiParts.push({ text: prompt });
 
     // Clean up uploaded files after reading
     for (const file of files) {
@@ -345,9 +345,9 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
       config: generationConfig,
     });
 
-    // Send the user prompt and files as the message
+    // Send the user prompt and files as the message (correct multimodal structure)
     let result = '';
-    const response = await chat.sendMessageStream({ message: geminiMessage });
+    const response = await chat.sendMessageStream({ message: { parts: geminiParts } });
     
     console.log('📤 Streaming response from RAG Engine...');
     for await (const chunk of response) {
