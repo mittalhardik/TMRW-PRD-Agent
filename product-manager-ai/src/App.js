@@ -139,7 +139,7 @@ const useRAGEngine = () => {
       let response;
       if (files && files.length > 0) {
         const formData = new FormData();
-        formData.append('prompt', query);
+        formData.append('prompt', query); // Ensure prompt is always sent
         files.forEach((file) => formData.append('files', file));
         response = await fetch(`${backendUrl}/rag/query`, {
           method: 'POST',
@@ -149,7 +149,7 @@ const useRAGEngine = () => {
         response = await fetch(`${backendUrl}/rag/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ prompt: query }), // Pass as 'prompt' to match backend
         });
       }
       if (!response.ok) {
