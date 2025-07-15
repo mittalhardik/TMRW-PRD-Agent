@@ -292,8 +292,20 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
       files.forEach(f => console.log(`  - ${f.originalname} (${f.mimetype}, ${(f.size/1024/1024).toFixed(2)} MB)`));
     }
 
-    // TODO: Pass files to Gemini as part of the prompt (multi-modal input)
-    // For now, just log and continue with text-only prompt
+    // Pass files to Gemini as part of the prompt (multi-modal input)
+    let geminiMessage = [];
+    if (files.length > 0) {
+      for (const file of files) {
+        const fileBuffer = fs.readFileSync(file.path);
+        geminiMessage.push({ data: fileBuffer, mimeType: file.mimetype });
+      }
+    }
+    geminiMessage.push({ text: prompt });
+
+    // Clean up uploaded files after reading
+    for (const file of files) {
+      try { fs.unlinkSync(file.path); } catch (e) { console.error('Failed to cleanup uploaded file:', file.path, e); }
+    }
 
     // System instruction and tools setup
     const siText1 = { text: `Perform a Comprehensive Review of the given 'Product Requirement Document' using the given Context.\nFlag any unwanted or incorrect text.\nGenerate an Improved and Comprehensive PRD.` };
@@ -333,10 +345,9 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
       config: generationConfig,
     });
 
-    // Send the user prompt as the message
-    const msg = { text: prompt };
+    // Send the user prompt and files as the message
     let result = '';
-    const response = await chat.sendMessageStream({ message: [msg] });
+    const response = await chat.sendMessageStream({ message: geminiMessage });
     
     console.log('📤 Streaming response from RAG Engine...');
     for await (const chunk of response) {
