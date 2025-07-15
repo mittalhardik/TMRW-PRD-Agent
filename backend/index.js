@@ -299,7 +299,7 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
         const fileBuffer = fs.readFileSync(file.path);
         geminiParts.push({
           inlineData: {
-            data: fileBuffer,
+            data: fileBuffer.toString('base64'), // base64 encoding for Vertex AI
             mimeType: file.mimetype
           }
         });
