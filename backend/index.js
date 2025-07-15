@@ -144,13 +144,18 @@ const upload = multer({
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
-      'text/markdown'
+      'text/markdown',
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'image/webp'
     ];
     
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Unsupported file type: ${file.mimetype}. Supported types: PDF, DOC, DOCX, TXT, MD`));
+      cb(new Error(`Unsupported file type: ${file.mimetype}. Supported types: PDF, DOC, DOCX, TXT, MD, PNG, JPG, JPEG, GIF, WEBP`));
     }
   }
 });
@@ -241,7 +246,7 @@ app.get('/status', async (req, res) => {
 });
 
 // Enhanced RAG Query Endpoint
-app.post('/rag/query', async (req, res) => {
+app.post('/rag/query', upload.array('files', 10), async (req, res) => {
   try {
     // Check credentials first
     const hasCredentials = await checkCredentials();
@@ -263,17 +268,32 @@ app.post('/rag/query', async (req, res) => {
       });
     }
 
-    const { query } = req.body;
-    
-    if (!query) {
+    let prompt;
+    let files = [];
+    if (req.is('multipart/form-data')) {
+      prompt = req.body.prompt;
+      files = req.files || [];
+    } else {
+      // fallback for JSON
+      prompt = req.body.query;
+    }
+
+    if (!prompt) {
       return res.status(400).json({ 
-        error: 'Missing query in request body.',
-        required: 'query field',
-        example: { query: 'What are the key features of our product?' }
+        error: 'Missing prompt in request body.',
+        required: 'prompt field (for multipart/form-data) or query field (for JSON)',
+        example: { prompt: 'What are the key features of our product?' }
       });
     }
 
-    console.log(`🔍 Processing RAG query: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`);
+    console.log(`🔍 Processing RAG query: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
+    if (files.length > 0) {
+      console.log(`📎 Received ${files.length} file(s) with the prompt.`);
+      files.forEach(f => console.log(`  - ${f.originalname} (${f.mimetype}, ${(f.size/1024/1024).toFixed(2)} MB)`));
+    }
+
+    // TODO: Pass files to Gemini as part of the prompt (multi-modal input)
+    // For now, just log and continue with text-only prompt
 
     // System instruction and tools setup
     const siText1 = { text: `Perform a Comprehensive Review of the given 'Product Requirement Document' using the given Context.\nFlag any unwanted or incorrect text.\nGenerate an Improved and Comprehensive PRD.` };
@@ -313,8 +333,8 @@ app.post('/rag/query', async (req, res) => {
       config: generationConfig,
     });
 
-    // Send the user query as the message
-    const msg = { text: query };
+    // Send the user prompt as the message
+    const msg = { text: prompt };
     let result = '';
     const response = await chat.sendMessageStream({ message: [msg] });
     
@@ -329,8 +349,9 @@ app.post('/rag/query', async (req, res) => {
     res.json({ 
       result,
       metadata: {
-        queryLength: query.length,
+        promptLength: prompt.length,
         responseLength: result.length,
+        fileCount: files.length,
         timestamp: new Date().toISOString()
       }
     });

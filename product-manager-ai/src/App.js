@@ -133,19 +133,29 @@ const LoadingSpinner = ({text}) => (
 const useRAGEngine = () => {
   const backendUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080';
   
-  const queryRAG = async (query) => {
+  // Accepts: { prompt, files } or just prompt
+  const queryRAG = async (query, files = []) => {
     try {
-      const response = await fetch(`${backendUrl}/rag/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      });
-      
+      let response;
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append('prompt', query);
+        files.forEach((file) => formData.append('files', file));
+        response = await fetch(`${backendUrl}/rag/query`, {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        response = await fetch(`${backendUrl}/rag/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+      }
       if (!response.ok) {
         const result = await response.json();
         throw new Error(result.error || 'Error querying RAG Engine');
       }
-      
       const result = await response.json();
       return result.result || 'No relevant information found.';
     } catch (error) {
@@ -275,27 +285,21 @@ const IdeationAgent = () => {
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [files, setFiles] = useState([]);
   const { queryRAG } = useRAGEngine();
+
+  const handleFileChange = (e) => {
+    setFiles(Array.from(e.target.files));
+  };
 
   const handleGenerate = async () => {
     if (!prompt) return;
     setIsLoading(true);
     setOutput('');
     setError('');
-    
     try {
-      const ragQuery = `You are the "Ideation Agent," a strategic brainstorming partner for a Product Manager. Your goal is to generate creative and data-driven product/feature ideas. 
-
-User's Request: "${prompt}"
-
-Your Task: 
-1. **Synthesize Findings:** Briefly summarize key findings from market trends, competitor analysis, and user needs.
-2. **Generate Ideas:** Based on your synthesis, generate a list of 5-7 innovative feature ideas. For each idea, provide a brief justification linking it back to the insights you identified.
-3. **Format:** Present your response in well-structured Markdown format.
-
-Please provide a comprehensive analysis and ideation based on the available knowledge base.`;
-      
-      const result = await queryRAG(ragQuery);
+      const ragQuery = `You are the "Ideation Agent," a strategic brainstorming partner for a Product Manager. Your goal is to generate creative and data-driven product/feature ideas. \n\nUser's Request: "${prompt}"\n\nYour Task: \n1. **Synthesize Findings:** Briefly summarize key findings from market trends, competitor analysis, and user needs.\n2. **Generate Ideas:** Based on your synthesis, generate a list of 5-7 innovative feature ideas. For each idea, provide a brief justification linking it back to the insights you identified.\n3. **Format:** Present your response in well-structured Markdown format.\n\nPlease provide a comprehensive analysis and ideation based on the available knowledge base.`;
+      const result = await queryRAG(ragQuery, files);
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -309,6 +313,23 @@ Please provide a comprehensive analysis and ideation based on the available know
       <h2 className="text-2xl font-bold text-white mb-2">Ideation Agent</h2>
       <p className="text-slate-400 mb-6">Your strategic partner for brainstorming. Provide a topic, and the agent will synthesize market trends and user needs to generate innovative ideas using the RAG Engine.</p>
       <TextArea title="Brainstorming Prompt" value={prompt} onChange={setPrompt} placeholder="e.g., How can our project management tool better support remote-first teams?" height="h-28" />
+      <div className="my-4">
+        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
+        <input
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+          onChange={handleFileChange}
+          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
+        />
+        {files.length > 0 && (
+          <div className="mt-2 text-slate-300 text-xs">
+            {files.map((file, idx) => (
+              <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
+            ))}
+          </div>
+        )}
+      </div>
       <button onClick={handleGenerate} disabled={isLoading || !prompt} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <BrainCircuit className="mr-2" />}
         Generate Ideas
@@ -327,43 +348,26 @@ const AuthoringAgent = () => {
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [files, setFiles] = useState([]);
   const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
-    setMeetingNotes(`Q2 Planning Meeting Notes:
-- John (UX): Users are confused by the current reporting dashboard. It's too cluttered.
-- Sarah (Eng): We need to build a more flexible data filtering system.
-- PM: The goal for Q3 is to increase user engagement with reports by 25%.
-- Key takeaway: Simplify the UI and add powerful filtering.`);
+    setMeetingNotes(`Q2 Planning Meeting Notes:\n- John (UX): Users are confused by the current reporting dashboard. It's too cluttered.\n- Sarah (Eng): We need to build a more flexible data filtering system.\n- PM: The goal for Q3 is to increase user engagement with reports by 25%.\n- Key takeaway: Simplify the UI and add powerful filtering.`);
     setUserStories('');
   }, []);
+
+  const handleFileChange = (e) => {
+    setFiles(Array.from(e.target.files));
+  };
 
   const handleGenerate = async () => {
     if (!meetingNotes && !userStories && !userPrompt) return;
     setIsLoading(true);
     setOutput('');
     setError('');
-    
     try {
-      const ragQuery = `You are the "PRD Authoring Agent." Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources and leveraging the knowledge base.
-
-**Source 1: User Instructions**
-${userPrompt}
-
-**Source 2: Meeting Notes**
-${meetingNotes}
-
-**Source 3: User Stories**
-${userStories}
-
-**Your Task:**
-1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions.
-2. **Leverage Knowledge Base:** Use the available knowledge base to enhance the PRD with best practices, industry standards, and relevant examples.
-3. **Final Output:** Generate the complete, filled-out PRD in Markdown format.
-
-Please create a comprehensive PRD that incorporates insights from the knowledge base.`;
-      
-      const result = await queryRAG(ragQuery);
+      const ragQuery = `You are the "PRD Authoring Agent." Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources and leveraging the knowledge base.\n\n**Source 1: User Instructions**\n${userPrompt}\n\n**Source 2: Meeting Notes**\n${meetingNotes}\n\n**Source 3: User Stories**\n${userStories}\n\n**Your Task:**\n1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions.\n2. **Leverage Knowledge Base:** Use the available knowledge base to enhance the PRD with best practices, industry standards, and relevant examples.\n3. **Final Output:** Generate the complete, filled-out PRD in Markdown format.\n\nPlease create a comprehensive PRD that incorporates insights from the knowledge base.`;
+      const result = await queryRAG(ragQuery, files);
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -380,6 +384,23 @@ Please create a comprehensive PRD that incorporates insights from the knowledge 
         <TextArea title="User Prompt (Additional Instructions)" value={userPrompt} onChange={setUserPrompt} placeholder="Add any special instructions or context for the PRD here." />
         <TextArea title="Source: Meeting Notes / Transcripts" value={meetingNotes} onChange={setMeetingNotes} placeholder="Paste relevant meeting notes, brainstorming session outputs, etc." />
         <TextArea title="Source: User Stories / Jira Tickets" value={userStories} onChange={setUserStories} placeholder="Paste user stories here." />
+      </div>
+      <div className="my-4">
+        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
+        <input
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+          onChange={handleFileChange}
+          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
+        />
+        {files.length > 0 && (
+          <div className="mt-2 text-slate-300 text-xs">
+            {files.map((file, idx) => (
+              <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
+            ))}
+          </div>
+        )}
       </div>
       <button onClick={handleGenerate} disabled={isLoading || (!meetingNotes && !userStories && !userPrompt)} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <FileText className="mr-2" />}
