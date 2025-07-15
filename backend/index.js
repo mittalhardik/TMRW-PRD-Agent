@@ -302,6 +302,14 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     }
     geminiParts.push({ text: prompt });
 
+    // NEW: Wrap in messages array with role: 'user'
+    const messages = [
+      {
+        role: "user",
+        parts: geminiParts
+      }
+    ];
+
     // Clean up uploaded files after reading
     for (const file of files) {
       try { fs.unlinkSync(file.path); } catch (e) { console.error('Failed to cleanup uploaded file:', file.path, e); }
@@ -347,7 +355,8 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
 
     // Send the user prompt and files as the message (correct multimodal structure)
     let result = '';
-    const response = await chat.sendMessageStream({ message: { parts: geminiParts } });
+    // CHANGED: Use messages array
+    const response = await chat.sendMessageStream({ messages });
     
     console.log('📤 Streaming response from RAG Engine...');
     for await (const chunk of response) {
