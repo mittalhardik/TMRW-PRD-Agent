@@ -278,7 +278,7 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
       prompt = req.body.query;
     }
 
-    if (!prompt) {
+    if (!prompt || !prompt.trim()) {
       return res.status(400).json({ 
         error: 'Missing prompt in request body.',
         required: 'prompt field (for multipart/form-data) or query field (for JSON)',
@@ -305,7 +305,14 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
         });
       }
     }
-    geminiParts.push({ text: prompt });
+    // Always add the prompt as text
+    if (prompt && prompt.trim()) {
+      geminiParts.push({ text: prompt });
+    }
+    // Defensive: ensure at least one part
+    if (!geminiParts.length) {
+      return res.status(400).json({ error: "ContentUnion is required: prompt or files must be provided." });
+    }
 
     // NEW: Wrap in messages array with role: 'user'
     const messages = [
