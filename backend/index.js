@@ -297,7 +297,12 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     if (files.length > 0) {
       for (const file of files) {
         const fileBuffer = fs.readFileSync(file.path);
-        geminiParts.push({ data: fileBuffer, mimeType: file.mimetype });
+        geminiParts.push({
+          inlineData: {
+            data: fileBuffer,
+            mimeType: file.mimetype
+          }
+        });
       }
     }
     geminiParts.push({ text: prompt });
