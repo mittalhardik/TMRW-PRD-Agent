@@ -139,7 +139,7 @@ const useRAGEngine = () => {
       let response;
       if (files && files.length > 0) {
         const formData = new FormData();
-        formData.append('prompt', query); // Ensure prompt is always sent
+        formData.append('prompt', query); // Always use 'prompt'
         files.forEach((file) => formData.append('files', file));
         response = await fetch(`${backendUrl}/rag/query`, {
           method: 'POST',
@@ -149,14 +149,25 @@ const useRAGEngine = () => {
         response = await fetch(`${backendUrl}/rag/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: query }), // Pass as 'prompt' to match backend
+          body: JSON.stringify({ prompt: query }), // Always use 'prompt'
         });
       }
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || 'Error querying RAG Engine');
+      let result;
+      try {
+        if (!response.ok) {
+          // Try to parse error as JSON, else fallback
+          try {
+            const errJson = await response.json();
+            throw new Error(errJson.error || 'Error querying RAG Engine');
+          } catch (jsonErr) {
+            const text = await response.text();
+            throw new Error(`RAG Engine error: ${text.substring(0, 200)}`);
+          }
+        }
+        result = await response.json();
+      } catch (parseErr) {
+        throw new Error('RAG Engine error: Invalid response from backend.');
       }
-      const result = await response.json();
       return result.result || 'No relevant information found.';
     } catch (error) {
       throw new Error(`RAG Engine error: ${error.message}`);

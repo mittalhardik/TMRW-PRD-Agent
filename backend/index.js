@@ -76,7 +76,7 @@ const checkCredentials = async () => {
 
 // Check if React build files exist
 const checkReactBuild = () => {
-  const buildPath = path.join(__dirname, './product-manager-ai/build');
+  const buildPath = path.join(__dirname, '../product-manager-ai/build');
   const indexPath = path.join(buildPath, 'index.html');
   
   if (!fs.existsSync(buildPath)) {
@@ -124,10 +124,11 @@ app.listen(port, () => {
 const PROJECT_ID = process.env.GCLOUD_PROJECT_ID || 'gen-lang-client-0723709535';
 const LOCATION = process.env.GCLOUD_LOCATION || 'us-central1';
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const RAG_CORPUS = process.env.VERTEX_RAG_CORPUS || 'projects/gen-lang-client-0723709535/locations/us-central1/ragCorpora/2305843009213693952';
+const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'tmrw_prd_agent';
+const RAG_CORPUS = process.env.VERTEX_RAG_CORPUS || `projects/${PROJECT_ID}/locations/${LOCATION}/ragCorpora/2305843009213693952`;
 
 // RAG Engine resource name (update if needed)
-const RAG_ENGINE = process.env.VERTEX_RAG_ENGINE || 'projects/gen-lang-client-0723709535/locations/us-central1/ragEngines/2305843009213693952';
+const RAG_ENGINE = process.env.VERTEX_RAG_ENGINE || `projects/${PROJECT_ID}/locations/${LOCATION}/ragEngines/2305843009213693952`;
 
 app.use(cors());
 app.use(express.json());
@@ -247,6 +248,7 @@ app.get('/status', async (req, res) => {
 
 // Enhanced RAG Query Endpoint
 app.post('/rag/query', upload.array('files', 10), async (req, res) => {
+  let files = [];
   try {
     // Check credentials first
     const hasCredentials = await checkCredentials();
@@ -269,19 +271,17 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     }
 
     let prompt;
-    let files = [];
     if (req.is('multipart/form-data')) {
-      prompt = req.body.prompt;
+      prompt = req.body.prompt || req.body.query;
       files = req.files || [];
     } else {
-      // fallback for JSON
-      prompt = req.body.query;
+      prompt = req.body.prompt || req.body.query;
     }
 
     if (!prompt || !prompt.trim()) {
       return res.status(400).json({ 
         error: 'Missing prompt in request body.',
-        required: 'prompt field (for multipart/form-data) or query field (for JSON)',
+        required: 'prompt field (for multipart/form-data or JSON)',
         example: { prompt: 'What are the key features of our product?' }
       });
     }
@@ -292,43 +292,30 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
       files.forEach(f => console.log(`  - ${f.originalname} (${f.mimetype}, ${(f.size/1024/1024).toFixed(2)} MB)`));
     }
 
-    // Pass files to Gemini as part of the prompt (multi-modal input)
+    // Build Gemini parts: prompt as text first, then files
     let geminiParts = [];
+    if (prompt && prompt.trim()) {
+      geminiParts.push({ text: prompt });
+    }
     if (files.length > 0) {
       for (const file of files) {
         const fileBuffer = fs.readFileSync(file.path);
         geminiParts.push({
           inlineData: {
-            data: fileBuffer.toString('base64'), // base64 encoding for Vertex AI
+            data: fileBuffer.toString('base64'),
             mimeType: file.mimetype
           }
         });
       }
     }
-    // Always add the prompt as text
-    if (prompt && prompt.trim()) {
-      geminiParts.push({ text: prompt });
-    }
-    // Defensive: ensure at least one part
     if (!geminiParts.length) {
       return res.status(400).json({ error: "ContentUnion is required: prompt or files must be provided." });
     }
 
-    // NEW: Wrap in messages array with role: 'user'
-    const messages = [
-      {
-        role: "user",
-        parts: geminiParts
-      }
-    ];
+    // Log the parts for debugging
+    console.log("Gemini parts to send:", JSON.stringify(geminiParts, null, 2));
 
-    // Clean up uploaded files after reading
-    for (const file of files) {
-      try { fs.unlinkSync(file.path); } catch (e) { console.error('Failed to cleanup uploaded file:', file.path, e); }
-    }
-
-    // System instruction and tools setup
-    const siText1 = { text: `Perform a Comprehensive Review of the given 'Product Requirement Document' using the given Context.\nFlag any unwanted or incorrect text.\nGenerate an Improved and Comprehensive PRD.` };
+    // Official Vertex AI RAG API v1 request structure
     const tools = [
       {
         retrieval: {
@@ -339,7 +326,20 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
         }
       }
     ];
-    const generationConfig = {
+    const systemInstruction = {
+      parts: [{ text: `Perform a Comprehensive Review of the given 'Product Requirement Document' using the given Context.\nFlag any unwanted or incorrect text.\nGenerate an Improved and Comprehensive PRD.` }]
+    };
+
+    const reqPayload = {
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: geminiParts
+        }
+      ],
+      tools,
+      systemInstruction,
       maxOutputTokens: 65535,
       temperature: 1,
       topP: 1,
@@ -349,9 +349,7 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
         { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
         { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
         { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
-      ],
-      tools: tools,
-      systemInstruction: { parts: [siText1] },
+      ]
     };
 
     // Initialize Vertex with your Cloud project and location
@@ -360,23 +358,49 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
       project: PROJECT_ID,
       location: LOCATION,
     });
-    const chat = ai.chats.create({
-      model: MODEL,
-      config: generationConfig,
-    });
 
-    // Send the user prompt and files as the message (correct multimodal structure)
     let result = '';
-    // CHANGED: Use messages array
-    const response = await chat.sendMessageStream({ messages });
-    
-    console.log('📤 Streaming response from RAG Engine...');
-    for await (const chunk of response) {
-      if (chunk.text) {
-        result += chunk.text;
+    let errorFromAPI = null;
+    let responseChunks = [];
+    try {
+      // Use generateContentStream with the official payload
+      const streamingResp = await ai.models.generateContentStream(reqPayload);
+      console.log('📤 Streaming response from RAG Engine...');
+      for await (const chunk of streamingResp) {
+        if (chunk.text) {
+          result += chunk.text;
+          responseChunks.push(chunk);
+        }
       }
+    } catch (apiErr) {
+      errorFromAPI = apiErr;
+      console.error('❌ Vertex AI API Error:', apiErr);
     }
-    
+
+    // Clean up uploaded files after reading, even on error
+    for (const file of files) {
+      try { fs.unlinkSync(file.path); } catch (e) { console.error('Failed to cleanup uploaded file:', file.path, e); }
+    }
+
+    // Enhanced error handling for empty or malformed responses
+    if (errorFromAPI) {
+      return res.status(502).json({
+        error: errorFromAPI.message || 'Vertex AI API error',
+        type: 'VERTEX_AI_ERROR',
+        details: errorFromAPI,
+        timestamp: new Date().toISOString()
+      });
+    }
+    if (!result || typeof result !== 'string' || result.trim() === '') {
+      console.error('❌ RAG Engine returned an empty or invalid response:', responseChunks);
+      return res.status(502).json({
+        error: 'RAG Engine returned an empty or invalid response',
+        type: 'INVALID_RAG_RESPONSE',
+        details: responseChunks,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     console.log(`✅ RAG query completed. Response length: ${result.length} characters`);
     res.json({ 
       result,
@@ -389,6 +413,10 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     });
   } catch (error) {
     console.error('❌ RAG Query Error:', error);
+    // Clean up uploaded files on error
+    for (const file of files) {
+      try { fs.unlinkSync(file.path); } catch (e) { console.error('Failed to cleanup uploaded file:', file.path, e); }
+    }
     res.status(500).json({ 
       error: error.message || 'Internal server error',
       type: 'RAG_QUERY_ERROR',
@@ -436,7 +464,7 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     console.log(`📤 Processing document upload: ${fileName} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
 
     // 1. Upload file to GCS
-    const bucketName = 'tmrw_prd_agent';
+    const bucketName = BUCKET_NAME;
     const gcsFileName = `${Date.now()}_${fileName}`;
     const storage = new Storage();
     await storage.bucket(bucketName).upload(filePath, { destination: gcsFileName });
@@ -538,7 +566,7 @@ app.use((error, req, res, next) => {
 });
 
 // Serve static files from the React app build directory (if it exists)
-const buildPath = path.join(__dirname, './product-manager-ai/build');
+const buildPath = path.join(__dirname, '../product-manager-ai/build');
 if (fs.existsSync(buildPath)) {
   app.use(express.static(buildPath));
   console.log('✅ Serving React app from build directory');
@@ -548,7 +576,7 @@ if (fs.existsSync(buildPath)) {
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
-  const indexPath = path.join(__dirname, './product-manager-ai/build', 'index.html');
+  const indexPath = path.join(__dirname, '../product-manager-ai/build', 'index.html');
   
   if (fs.existsSync(indexPath)) {
     try {
@@ -579,4 +607,4 @@ app.get('*', (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
-}); 
+});

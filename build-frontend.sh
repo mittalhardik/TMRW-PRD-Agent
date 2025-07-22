@@ -19,9 +19,10 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-# Build the frontend
-echo "🔨 Building React app..."
+echo "🏗️ Building frontend for production..."
 npm run build
+
+cd .. # Navigate back to the root directory
 
 # Check if build was successful
 if [ $? -eq 0 ]; then
@@ -36,4 +37,4 @@ else
     echo "❌ Frontend build failed"
     echo "📝 Check the error messages above"
     exit 1
-fi 
+fi
