@@ -217,15 +217,13 @@ const DocumentUploadAgent = () => {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) return;
-    
     setIsUploading(true);
     setError('');
     setUploadStatus('');
     
     try {
       await uploadDocument(selectedFile);
-      setUploadStatus(`Successfully uploaded ${selectedFile.name} to RAG Engine!`);
+      setUploadStatus(`Successfully uploaded ${selectedFile?.name || ''} to RAG Engine!`);
       setSelectedFile(null);
       // Reset file input
       const fileInput = document.getElementById('file-input');
@@ -264,7 +262,7 @@ const DocumentUploadAgent = () => {
         
         <button 
           onClick={handleUpload} 
-          disabled={isUploading || !selectedFile} 
+          disabled={isUploading} 
           className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center"
         >
           {isUploading ? <Loader className="animate-spin mr-2" /> : <Upload className="mr-2" />}
@@ -304,7 +302,6 @@ const IdeationAgent = () => {
   };
 
   const handleGenerate = async () => {
-    if (!prompt) return;
     setIsLoading(true);
     setOutput('');
     setError('');
@@ -341,7 +338,7 @@ const IdeationAgent = () => {
           </div>
         )}
       </div>
-      <button onClick={handleGenerate} disabled={isLoading || !prompt} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
+      <button onClick={handleGenerate} disabled={isLoading} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <BrainCircuit className="mr-2" />}
         Generate Ideas
       </button>
@@ -372,7 +369,6 @@ const AuthoringAgent = () => {
   };
 
   const handleGenerate = async () => {
-    if (!meetingNotes && !userStories && !userPrompt) return;
     setIsLoading(true);
     setOutput('');
     setError('');
@@ -413,7 +409,7 @@ const AuthoringAgent = () => {
           </div>
         )}
       </div>
-      <button onClick={handleGenerate} disabled={isLoading || (!meetingNotes && !userStories && !userPrompt)} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
+      <button onClick={handleGenerate} disabled={isLoading} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <FileText className="mr-2" />}
         Draft PRD
       </button>
@@ -430,6 +426,7 @@ const ReviewAgent = () => {
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [files, setFiles] = useState([]); // Add state for files
   const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
@@ -452,35 +449,18 @@ const ReviewAgent = () => {
 3. **Goal-Oriented:** Users visit profiles to accomplish a specific task, not to browse.`);
   }, []);
 
+  const handleFileChange = (e) => {
+    setFiles(Array.from(e.target.files));
+  };
+
   const handleGenerate = async () => {
-    if (!prd || !reference) return;
     setIsLoading(true);
     setOutput('');
     setError('');
     
     try {
-      const ragQuery = `You are the "PRD Review Agent," an expert Product Manager. Your job is to perform a quality check on a PRD draft using the knowledge base for best practices and industry standards.
-
-**Context A: The PRD for Review**
-\`\`\`markdown
-${prd}
-\`\`\`
-
-**Context B: The Reference Document (User Research)**
-\`\`\`
-${reference}
-\`\`\`
-
-**Your Task:**
-Generate a detailed PRD review that includes:
-1. **Quality Assessment:** Evaluate the PRD against industry best practices
-2. **Alignment Check:** Verify consistency with user research and reference materials
-3. **Completeness Review:** Identify missing elements or gaps
-4. **Recommendations:** Provide specific improvements based on the knowledge base
-
-Please provide a comprehensive review leveraging the available knowledge base.`;
-      
-      const result = await queryRAG(ragQuery);
+      const ragQuery = `You are the "PRD Review Agent," an expert Product Manager. Your job is to perform a quality check on a PRD draft using the knowledge base for best practices and industry standards.\n\n**Context A: The PRD for Review**\n\`\`\`markdown\n${prd}\n\`\`\`\n\n or attached Document. **Context B: The Reference Document (User Research)**\n\`\`\`\n${reference}\n\`\`\`\n\n**Your Task:**\nGenerate a detailed PRD review that includes:\n1. **Quality Assessment:** Evaluate the PRD against industry best practices, completeness, and clarity.\n2. **Alignment Check:** Assess alignment with user research and business goals.\n3. **Improvement Suggestions:** Suggest actionable improvements.\n4. **Format:** Present your review in Markdown format.`;
+      const result = await queryRAG(ragQuery, files); // Pass files to queryRAG
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -497,7 +477,24 @@ Please provide a comprehensive review leveraging the available knowledge base.`;
         <TextArea title="PRD to Review" value={prd} onChange={setPrd} placeholder="Paste the PRD content you want to have reviewed." />
         <TextArea title="Reference Document (e.g., User Research)" value={reference} onChange={setReference} placeholder="Paste the content of the document you want to compare the PRD against." />
       </div>
-      <button onClick={handleGenerate} disabled={isLoading || !prd} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
+      <div className="my-4">
+        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
+        <input
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+          onChange={handleFileChange}
+          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
+        />
+        {files.length > 0 && (
+          <div className="mt-2 text-slate-300 text-xs">
+            {files.map((file, idx) => (
+              <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
+            ))}
+          </div>
+        )}
+      </div>
+      <button onClick={handleGenerate} disabled={isLoading} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <Search className="mr-2" />}
         Review PRD
       </button>
@@ -516,7 +513,6 @@ const RetrievalAgent = () => {
   const { queryRAG } = useRAGEngine();
 
   const handleRetrieve = async () => {
-    if (!query) return;
     setIsLoading(true);
     setOutput('');
     setError('');
@@ -536,7 +532,7 @@ const RetrievalAgent = () => {
       <h2 className="text-2xl font-bold text-white mb-2">Retrieval Agent</h2>
       <p className="text-slate-400 mb-6">Retrieve the most relevant sections from the RAG Engine for your query.</p>
       <TextArea title="Retrieval Query" value={query} onChange={setQuery} placeholder="Enter your question or topic to retrieve relevant sections..." height="h-20" />
-      <button onClick={handleRetrieve} disabled={isLoading || !query} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
+      <button onClick={handleRetrieve} disabled={isLoading} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <Book className="mr-2" />}
         Retrieve
       </button>
