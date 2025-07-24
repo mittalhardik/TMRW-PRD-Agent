@@ -74,26 +74,36 @@ const checkCredentials = async () => {
   }
 };
 
-// Check if React build files exist
+// Utility to resolve the React build directory for both local and cloud environments
+function resolveReactBuildPath() {
+  const localBuild = path.join(__dirname, '../product-manager-ai/build');
+  const backendBuild = path.join(__dirname, './build');
+  if (fs.existsSync(localBuild) && fs.existsSync(path.join(localBuild, 'index.html'))) {
+    return localBuild;
+  }
+  if (fs.existsSync(backendBuild) && fs.existsSync(path.join(backendBuild, 'index.html'))) {
+    return backendBuild;
+  }
+  return null;
+}
+
+// Update checkReactBuild to use the new utility
 const checkReactBuild = () => {
-  const buildPath = path.join(__dirname, './build');
-  const indexPath = path.join(buildPath, 'index.html');
-  
-  if (!fs.existsSync(buildPath)) {
+  const buildPath = resolveReactBuildPath();
+  if (!buildPath) {
     console.log('⚠️  React build directory not found');
     console.log('📝 To build the frontend, run:');
     console.log('   cd product-manager-ai && npm install && npm run build');
     return false;
   }
-  
+  const indexPath = path.join(buildPath, 'index.html');
   if (!fs.existsSync(indexPath)) {
     console.log('⚠️  React build files not found');
     console.log('📝 To build the frontend, run:');
     console.log('   cd product-manager-ai && npm install && npm run build');
     return false;
   }
-  
-  console.log('✅ React build files found');
+  console.log('✅ React build files found at', buildPath);
   return true;
 };
 
@@ -562,45 +572,47 @@ app.use((error, req, res, next) => {
 });
 
 // Serve static files from the React app build directory (if it exists)
-const buildPath = path.join(__dirname, './build');
-if (fs.existsSync(buildPath)) {
-  app.use(express.static(buildPath));
-  console.log('✅ Serving React app from build directory');
+const resolvedBuildPath = resolveReactBuildPath();
+if (resolvedBuildPath) {
+  app.use(express.static(resolvedBuildPath));
+  console.log('✅ Serving React app from build directory:', resolvedBuildPath);
 } else {
   console.log('⚠️  React build directory not found - API-only mode');
 }
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
-  const indexPath = path.join(__dirname, './build', 'index.html');
-  
-  if (fs.existsSync(indexPath)) {
-    try {
-      res.sendFile(indexPath);
-    } catch (err) {
-      console.error('❌ Error serving React app:', err);
-      res.status(500).send('Internal Server Error');
+  const buildPath = resolveReactBuildPath();
+  if (buildPath) {
+    const indexPath = path.join(buildPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      try {
+        res.sendFile(indexPath);
+      } catch (err) {
+        console.error('❌ Error serving React app:', err);
+        res.status(500).send('Internal Server Error');
+      }
+      return;
     }
-  } else {
-    // If React app is not built, show API-only message
-    res.status(404).json({
-      error: 'Frontend not built',
-      message: 'The React frontend has not been built yet.',
-      instructions: [
-        'To build the frontend, run:',
-        'cd product-manager-ai',
-        'npm install',
-        'npm run build',
-        '',
-        'For Cloud Run deployment, the frontend should be built automatically during the build process.'
-      ],
-      availableEndpoints: [
-        'GET /health - Health check',
-        'POST /rag/query - RAG Engine queries',
-        'POST /rag/ingest - Document upload',
-        'GET /status - Service status'
-      ],
-      timestamp: new Date().toISOString()
-    });
   }
+  // If React app is not built, show API-only message
+  res.status(404).json({
+    error: 'Frontend not built',
+    message: 'The React frontend has not been built yet.',
+    instructions: [
+      'To build the frontend, run:',
+      'cd product-manager-ai',
+      'npm install',
+      'npm run build',
+      '',
+      'For Cloud Run deployment, the frontend should be built automatically during the build process.'
+    ],
+    availableEndpoints: [
+      'GET /health - Health check',
+      'POST /rag/query - RAG Engine queries',
+      'POST /rag/ingest - Document upload',
+      'GET /status - Service status'
+    ],
+    timestamp: new Date().toISOString()
+  });
 });
