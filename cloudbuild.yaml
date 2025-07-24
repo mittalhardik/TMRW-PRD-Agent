@@ -9,13 +9,13 @@ steps:
     entrypoint: 'npm'
     args: ['run', 'build']
 
-  # Copy the frontend build into backend/build
+  # Copy the frontend build into backend/build (fix: copy contents, not directory)
   - name: 'gcr.io/cloud-builders/gsutil'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        cp -r product-manager-ai/build backend/build
+        cp -r product-manager-ai/build/. backend/build/
 
   # Install backend dependencies
   - name: 'node:18'
