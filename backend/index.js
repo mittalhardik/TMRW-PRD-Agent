@@ -574,7 +574,16 @@ app.use((error, req, res, next) => {
 // Serve static files from the React app build directory (if it exists)
 const resolvedBuildPath = resolveReactBuildPath();
 if (resolvedBuildPath) {
-  app.use(express.static(resolvedBuildPath));
+  // Serve static assets with long cache, except index.html
+  app.use(express.static(resolvedBuildPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
+  }));
   console.log('✅ Serving React app from build directory:', resolvedBuildPath);
 } else {
   console.log('⚠️  React build directory not found - API-only mode');
@@ -587,6 +596,7 @@ app.get('*', (req, res) => {
     const indexPath = path.join(buildPath, 'index.html');
     if (fs.existsSync(indexPath)) {
       try {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.sendFile(indexPath);
       } catch (err) {
         console.error('❌ Error serving React app:', err);
