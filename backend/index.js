@@ -76,7 +76,7 @@ const checkCredentials = async () => {
 
 // Check if React build files exist
 const checkReactBuild = () => {
-  const buildPath = path.join(__dirname, '../product-manager-ai/build');
+  const buildPath = path.join(__dirname, './build');
   const indexPath = path.join(buildPath, 'index.html');
   
   if (!fs.existsSync(buildPath)) {
@@ -562,7 +562,7 @@ app.use((error, req, res, next) => {
 });
 
 // Serve static files from the React app build directory (if it exists)
-const buildPath = path.join(__dirname, '../product-manager-ai/build');
+const buildPath = path.join(__dirname, './build');
 if (fs.existsSync(buildPath)) {
   app.use(express.static(buildPath));
   console.log('✅ Serving React app from build directory');
@@ -572,7 +572,7 @@ if (fs.existsSync(buildPath)) {
 
 // The "catchall" handler: for any request that doesn't match an API route, send back React's index.html
 app.get('*', (req, res) => {
-  const indexPath = path.join(__dirname, '../product-manager-ai/build', 'index.html');
+  const indexPath = path.join(__dirname, './build', 'index.html');
   
   if (fs.existsSync(indexPath)) {
     try {
