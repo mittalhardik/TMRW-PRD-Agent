@@ -360,7 +360,7 @@ const AuthoringAgent = () => {
   const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
-    setMeetingNotes(`Q2 Planning Meeting Notes:\n- John (UX): Users are confused by the current reporting dashboard. It's too cluttered.\n- Sarah (Eng): We need to build a more flexible data filtering system.\n- PM: The goal for Q3 is to increase user engagement with reports by 25%.\n- Key takeaway: Simplify the UI and add powerful filtering.`);
+    setMeetingNotes(``);
     setUserStories('');
   }, []);
 
@@ -373,7 +373,7 @@ const AuthoringAgent = () => {
     setOutput('');
     setError('');
     try {
-      const ragQuery = `You are the "PRD Authoring Agent." Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources and leveraging the knowledge base.\n\n**Source 1: User Instructions**\n${userPrompt}\n\n**Source 2: Meeting Notes**\n${meetingNotes}\n\n**Source 3: User Stories**\n${userStories}\n\n**Your Task:**\n1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions.\n2. **Leverage Knowledge Base:** Use the available knowledge base to enhance the PRD with best practices, industry standards, and relevant examples.\n3. **Final Output:** Generate the complete, filled-out PRD in Markdown format.\n\nPlease create a comprehensive PRD that incorporates insights from the knowledge base.`;
+      const ragQuery = `You are the "PRD Authoring Agent." Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources and leveraging the knowledge base.\n\n**Source 1: User Instructions**\n${userPrompt}\n or Attached Files \n**Source 2: Meeting Notes**\n${meetingNotes}\n\n**Source 3: User Stories**\n${userStories}\n\n**Your Task:**\n1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions.\n2. **Leverage Knowledge Base:** Use the available knowledge base to enhance the PRD with best practices, industry standards, and relevant examples.\n3. **Final Output:** Generate the complete, filled-out PRD in Markdown format.\n\nPlease create a comprehensive PRD that incorporates insights from the knowledge base.`;
       const result = await queryRAG(ragQuery, files);
       setOutput(result);
     } catch (err) {
@@ -430,23 +430,8 @@ const ReviewAgent = () => {
   const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
-    setPrd(`## PRD: User Profile Redesign
-
-**Problem Statement:** Our user profiles look outdated and don't provide enough value to users.
-
-**Success Metrics:**
-- Increase time spent on profile pages by 15%.
-- Increase number of profile fields filled out by 20%.
-
-**Features:**
-- Add a customizable banner image.
-- Allow users to add a project portfolio section.`);
-    setReference(`## Q1 User Research Summary
-
-**Key Findings:**
-1. **Discoverability is low:** Users report they have a very hard time finding specific information on other users' profiles. "It's a wall of text," one user said.
-2. **Trust Issues:** Users don't trust profiles that are incomplete. They want to see verification badges.
-3. **Goal-Oriented:** Users visit profiles to accomplish a specific task, not to browse.`);
+    setPrd(``);
+    setReference(``);
   }, []);
 
   const handleFileChange = (e) => {
@@ -472,13 +457,13 @@ const ReviewAgent = () => {
   return (
     <div>
       <h2 className="text-2xl font-bold text-white mb-2">PRD Review Agent</h2>
-      <p className="text-slate-400 mb-6">Your quality assurance partner. The agent analyzes a PRD for consistency, completeness, and alignment with strategy and best practices using the RAG Engine.</p>
+      <p className="text-slate-400 mb-6">Your quality assurance Agent. The agent analyzes a PRD for consistency, completeness, and alignment with strategy and best practices using the RAG Engine.</p>
       <div className="space-y-4">
-        <TextArea title="PRD to Review" value={prd} onChange={setPrd} placeholder="Paste the PRD content you want to have reviewed." />
+        <TextArea title="PRD to Review" value={prd} onChange={setPrd} placeholder="Paste the PRD content you want to have reviewed. (OR Attach the PRD Below)" />
         <TextArea title="Reference Document (e.g., User Research)" value={reference} onChange={setReference} placeholder="Paste the content of the document you want to compare the PRD against." />
       </div>
       <div className="my-4">
-        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
+        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images</label>
         <input
           type="file"
           multiple
