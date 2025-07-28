@@ -12,6 +12,9 @@ const fs = require('fs');
 const { GoogleAuth } = require('google-auth-library');
 const { Storage } = require('@google-cloud/storage');
 
+// Add node-fetch for GitHub API calls
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
 const app = express();
 
 // Enhanced logging middleware
@@ -281,11 +284,14 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     }
 
     let prompt;
+    let includeCodebaseContext = false;
     if (req.is('multipart/form-data')) {
       prompt = req.body.prompt || req.body.query;
       files = req.files || [];
+      includeCodebaseContext = req.body.includeCodebaseContext === 'true' || req.body.includeCodebaseContext === true;
     } else {
       prompt = req.body.prompt || req.body.query;
+      includeCodebaseContext = req.body.includeCodebaseContext === true;
     }
 
     if (!prompt || !prompt.trim()) {
@@ -300,6 +306,14 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     if (files.length > 0) {
       console.log(`📎 Received ${files.length} file(s) with the prompt.`);
       files.forEach(f => console.log(`  - ${f.originalname} (${f.mimetype}, ${(f.size/1024/1024).toFixed(2)} MB)`));
+    }
+
+    // If codebase context is enabled, fetch and prepend entire codebase
+    if (includeCodebaseContext) {
+      console.log('📚 Fetching entire codebase context from GitHub...');
+      const codebaseContext = await getEntireCodebaseContext();
+      prompt = `=== CODEBASE CONTEXT FROM https://github.com/mittalhardik/TMRW-PRD-Agent.git ===\n\n${codebaseContext}\n\n=== USER QUERY ===\n${prompt}`;
+      console.log(`✅ Added codebase context (${codebaseContext.length} characters)`);
     }
 
     // Build Gemini parts: prompt as text first, then files
@@ -418,6 +432,7 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
         promptLength: prompt.length,
         responseLength: result.length,
         fileCount: files.length,
+        includeCodebaseContext,
         timestamp: new Date().toISOString()
       }
     });
@@ -434,6 +449,76 @@ app.post('/rag/query', upload.array('files', 10), async (req, res) => {
     });
   }
 });
+
+// Function to fetch entire codebase from GitHub
+async function getEntireCodebaseContext() {
+  const REPO_OWNER = 'mittalhardik';
+  const REPO_NAME = 'TMRW-PRD-Agent';
+  const BRANCH = 'main';
+  
+  try {
+    console.log('🔍 Fetching repository tree from GitHub...');
+    
+    // Get repository tree (file structure)
+    const treeResponse = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${BRANCH}?recursive=1`);
+    if (!treeResponse.ok) {
+      throw new Error(`GitHub API error: ${treeResponse.status}`);
+    }
+    
+    const treeData = await treeResponse.json();
+    const files = treeData.tree.filter(item => 
+      item.type === 'blob' && 
+      !item.path.includes('node_modules') &&
+      !item.path.includes('.git') &&
+      !item.path.includes('uploads') &&
+      !item.path.includes('build') &&
+      !item.path.includes('dist') &&
+      !item.path.includes('.env') &&
+      !item.path.includes('service-account-key.json') &&
+      (item.path.endsWith('.js') || 
+       item.path.endsWith('.ts') || 
+       item.path.endsWith('.jsx') || 
+       item.path.endsWith('.tsx') || 
+       item.path.endsWith('.json') || 
+       item.path.endsWith('.md') || 
+       item.path.endsWith('.txt') || 
+       item.path.endsWith('.yaml') || 
+       item.path.endsWith('.yml') ||
+       item.path.endsWith('.sh'))
+    );
+    
+    console.log(`📁 Found ${files.length} relevant files in repository`);
+    
+    // Fetch content for each file
+    let codebaseContext = `REPOSITORY: ${REPO_OWNER}/${REPO_NAME}\nBRANCH: ${BRANCH}\n\nFILES:\n`;
+    
+    for (const file of files) {
+      try {
+        const contentResponse = await fetch(`https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/${file.path}`);
+        if (contentResponse.ok) {
+          const content = await contentResponse.text();
+          // Truncate large files to avoid token limits
+          const maxLength = 5000;
+          const truncatedContent = content.length > maxLength 
+            ? content.substring(0, maxLength) + '\n... [truncated]'
+            : content;
+          
+          codebaseContext += `\n--- ${file.path} ---\n${truncatedContent}\n`;
+        }
+      } catch (fileError) {
+        console.log(`⚠️  Failed to fetch ${file.path}: ${fileError.message}`);
+        codebaseContext += `\n--- ${file.path} ---\n[Failed to fetch content]\n`;
+      }
+    }
+    
+    console.log(`✅ Codebase context prepared (${codebaseContext.length} characters)`);
+    return codebaseContext;
+    
+  } catch (error) {
+    console.error('❌ Error fetching codebase:', error);
+    return `Failed to fetch codebase context: ${error.message}`;
+  }
+}
 
 // Enhanced Document Ingestion Endpoint
 app.post('/rag/ingest', upload.single('document'), async (req, res) => {

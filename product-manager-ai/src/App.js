@@ -133,13 +133,14 @@ const LoadingSpinner = ({text}) => (
 const useRAGEngine = () => {
   const backendUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080';
   
-  // Accepts: { prompt, files } or just prompt
-  const queryRAG = async (query, files = []) => {
+  // Accepts: { prompt, files, includeCodebaseContext }
+  const queryRAG = async (query, files = [], includeCodebaseContext = false) => {
     try {
       let response;
       if (files && files.length > 0) {
         const formData = new FormData();
-        formData.append('prompt', query); // Always use 'prompt'
+        formData.append('prompt', query);
+        formData.append('includeCodebaseContext', includeCodebaseContext);
         files.forEach((file) => formData.append('files', file));
         response = await fetch(`${backendUrl}/rag/query`, {
           method: 'POST',
@@ -149,13 +150,12 @@ const useRAGEngine = () => {
         response = await fetch(`${backendUrl}/rag/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: query }), // Always use 'prompt'
+          body: JSON.stringify({ prompt: query, includeCodebaseContext }),
         });
       }
       let result;
       try {
         if (!response.ok) {
-          // Try to parse error as JSON, else fallback
           try {
             const errJson = await response.json();
             throw new Error(errJson.error || 'Error querying RAG Engine');
@@ -289,7 +289,7 @@ const DocumentUploadAgent = () => {
 
 // --- Main Agent Components ---
 
-const IdeationAgent = () => {
+const IdeationAgent = ({ includeCodebaseContext }) => {
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -307,7 +307,7 @@ const IdeationAgent = () => {
     setError('');
     try {
       const ragQuery = `You are the "Ideation Agent," a strategic brainstorming partner for a Product Manager. Your goal is to generate creative and data-driven product/feature ideas. \n\nUser's Request: "${prompt}"\n\nYour Task: \n1. **Synthesize Findings:** Briefly summarize key findings from market trends, competitor analysis, and user needs.\n2. **Generate Ideas:** Based on your synthesis, generate a list of 5-7 innovative feature ideas. For each idea, provide a brief justification linking it back to the insights you identified.\n3. **Format:** Present your response in well-structured Markdown format.\n\nPlease provide a comprehensive analysis and ideation based on the available knowledge base.`;
-      const result = await queryRAG(ragQuery, files);
+      const result = await queryRAG(ragQuery, files, includeCodebaseContext);
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -349,7 +349,7 @@ const IdeationAgent = () => {
   );
 };
 
-const AuthoringAgent = () => {
+const AuthoringAgent = ({ includeCodebaseContext }) => {
   const [userPrompt, setUserPrompt] = useState('');
   const [meetingNotes, setMeetingNotes] = useState('');
   const [userStories, setUserStories] = useState('');
@@ -374,7 +374,7 @@ const AuthoringAgent = () => {
     setError('');
     try {
       const ragQuery = `You are the "PRD Authoring Agent." Your job is to create a well-structured first draft of a PRD by synthesizing information from various sources and leveraging the knowledge base.\n\n**Source 1: User Instructions**\n${userPrompt}\n or Attached Files \n**Source 2: Meeting Notes**\n${meetingNotes}\n\n**Source 3: User Stories**\n${userStories}\n\n**Your Task:**\n1. **Synthesize & Infer:** Infer requirements and problem statements from the notes, user stories, and user instructions.\n2. **Leverage Knowledge Base:** Use the available knowledge base to enhance the PRD with best practices, industry standards, and relevant examples.\n3. **Final Output:** Generate the complete, filled-out PRD in Markdown format.\n\nPlease create a comprehensive PRD that incorporates insights from the knowledge base.`;
-      const result = await queryRAG(ragQuery, files);
+      const result = await queryRAG(ragQuery, files, includeCodebaseContext);
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -389,44 +389,44 @@ const AuthoringAgent = () => {
       <p className="text-slate-400 mb-6">Automate the creation of your first PRD draft. Provide the source materials and additional instructions, and the agent will compile them into a structured document using the RAG Engine.</p>
       <div className="space-y-4">
         <TextArea title="User Prompt (Additional Instructions)" value={userPrompt} onChange={setUserPrompt} placeholder="Add any special instructions or context for the PRD here." />
-        <TextArea title="Source: Meeting Notes / Transcripts" value={meetingNotes} onChange={setMeetingNotes} placeholder="Paste relevant meeting notes, brainstorming session outputs, etc." />
-        <TextArea title="Source: User Stories / Jira Tickets" value={userStories} onChange={setUserStories} placeholder="Paste user stories here." />
-      </div>
-      <div className="my-4">
-        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
-        <input
-          type="file"
-          multiple
-          accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
-          onChange={handleFileChange}
-          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
-        />
-        {files.length > 0 && (
-          <div className="mt-2 text-slate-300 text-xs">
-            {files.map((file, idx) => (
-              <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
-            ))}
-          </div>
-        )}
+        <TextArea title="Meeting Notes" value={meetingNotes} onChange={setMeetingNotes} placeholder="Paste meeting notes, stakeholder feedback, or any other relevant information here." />
+        <TextArea title="User Stories" value={userStories} onChange={setUserStories} placeholder="Paste user stories, requirements, or feature requests here." />
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+            onChange={handleFileChange}
+            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
+          />
+          {files.length > 0 && (
+            <div className="mt-2 text-slate-300 text-xs">
+              {files.map((file, idx) => (
+                <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <button onClick={handleGenerate} disabled={isLoading} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <FileText className="mr-2" />}
-        Draft PRD
+        Generate PRD
       </button>
-      {isLoading && <LoadingSpinner text="Creating PRD with RAG Engine..." />}
+      {isLoading && <LoadingSpinner text="Generating PRD with RAG Engine..." />}
       {error && <div className="mt-4 text-red-400">{error}</div>}
-      {output && <OutputDisplay title="Generated PRD Draft" content={output} />}
+      {output && <OutputDisplay title="Generated PRD" content={output} />}
     </div>
   );
 };
 
-const ReviewAgent = () => {
+const ReviewAgent = ({ includeCodebaseContext }) => {
   const [prd, setPrd] = useState('');
   const [reference, setReference] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [files, setFiles] = useState([]); // Add state for files
+  const [files, setFiles] = useState([]);
   const { queryRAG } = useRAGEngine();
 
   useEffect(() => {
@@ -445,7 +445,7 @@ const ReviewAgent = () => {
     
     try {
       const ragQuery = `You are the "PRD Review Agent," an expert Product Manager. Your job is to perform a quality check on a PRD draft using the knowledge base for best practices and industry standards.\n\n**Context A: The PRD for Review**\n\`\`\`markdown\n${prd}\n\`\`\`\n\n or attached Document. **Context B: The Reference Document (User Research)**\n\`\`\`\n${reference}\n\`\`\`\n\n**Your Task:**\nGenerate a detailed PRD review that includes:\n1. **Quality Assessment:** Evaluate the PRD against industry best practices, completeness, and clarity.\n2. **Alignment Check:** Assess alignment with user research and business goals.\n3. **Improvement Suggestions:** Suggest actionable improvements.\n4. **Format:** Present your review in Markdown format.`;
-      const result = await queryRAG(ragQuery, files); // Pass files to queryRAG
+      const result = await queryRAG(ragQuery, files, includeCodebaseContext);
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -457,40 +457,40 @@ const ReviewAgent = () => {
   return (
     <div>
       <h2 className="text-2xl font-bold text-white mb-2">PRD Review Agent</h2>
-      <p className="text-slate-400 mb-6">Your quality assurance Agent. The agent analyzes a PRD for consistency, completeness, and alignment with strategy and best practices using the RAG Engine.</p>
+      <p className="text-slate-400 mb-6">Review and analyze PRDs for quality, completeness, and alignment with best practices using the RAG Engine.</p>
       <div className="space-y-4">
-        <TextArea title="PRD to Review" value={prd} onChange={setPrd} placeholder="Paste the PRD content you want to have reviewed. (OR Attach the PRD Below)" />
-        <TextArea title="Reference Document (e.g., User Research)" value={reference} onChange={setReference} placeholder="Paste the content of the document you want to compare the PRD against." />
-      </div>
-      <div className="my-4">
-        <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images</label>
-        <input
-          type="file"
-          multiple
-          accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
-          onChange={handleFileChange}
-          className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
-        />
-        {files.length > 0 && (
-          <div className="mt-2 text-slate-300 text-xs">
-            {files.map((file, idx) => (
-              <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
-            ))}
-          </div>
-        )}
+        <TextArea title="PRD to Review" value={prd} onChange={setPrd} placeholder="Paste the PRD you want to review here..." />
+        <TextArea title="Reference Document (User Research, etc.)" value={reference} onChange={setReference} placeholder="Paste any reference materials, user research, or context here..." />
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Attach Documents or Images (optional)</label>
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+            onChange={handleFileChange}
+            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer cursor-pointer"
+          />
+          {files.length > 0 && (
+            <div className="mt-2 text-slate-300 text-xs">
+              {files.map((file, idx) => (
+                <div key={idx}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <button onClick={handleGenerate} disabled={isLoading} className="mt-4 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center">
         {isLoading ? <Loader className="animate-spin mr-2" /> : <Search className="mr-2" />}
         Review PRD
       </button>
-      {isLoading && <LoadingSpinner text="Reviewing with RAG Engine..." />}
+      {isLoading && <LoadingSpinner text="Reviewing PRD with RAG Engine..." />}
       {error && <div className="mt-4 text-red-400">{error}</div>}
       {output && <OutputDisplay title="PRD Review Analysis" content={output} />}
     </div>
   );
 };
 
-const RetrievalAgent = () => {
+const RetrievalAgent = ({ includeCodebaseContext }) => {
   const [query, setQuery] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -503,7 +503,7 @@ const RetrievalAgent = () => {
     setError('');
     
     try {
-      const result = await queryRAG(query);
+      const result = await queryRAG(query, [], includeCodebaseContext);
       setOutput(result);
     } catch (err) {
       setError(err.message);
@@ -531,17 +531,18 @@ const RetrievalAgent = () => {
 // --- Main App Component ---
 export default function App() {
   const [activeAgent, setActiveAgent] = useState('ideation');
+  const [includeCodebaseContext, setIncludeCodebaseContext] = useState(false);
 
   const renderActiveAgent = () => {
     switch (activeAgent) {
       case 'ideation':
-        return <IdeationAgent />;
+        return <IdeationAgent includeCodebaseContext={includeCodebaseContext} />;
       case 'authoring':
-        return <AuthoringAgent />;
+        return <AuthoringAgent includeCodebaseContext={includeCodebaseContext} />;
       case 'review':
-        return <ReviewAgent />;
+        return <ReviewAgent includeCodebaseContext={includeCodebaseContext} />;
       case 'retrieval':
-        return <RetrievalAgent />;
+        return <RetrievalAgent includeCodebaseContext={includeCodebaseContext} />;
       case 'upload':
         return <DocumentUploadAgent />;
       default:
@@ -560,6 +561,20 @@ export default function App() {
             An interactive prototype of an Agentic RAG system with an integrated, explicit knowledge base.
           </p>
         </header>
+        <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center space-x-3 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+            <input
+              type="checkbox"
+              id="codebase-toggle"
+              checked={includeCodebaseContext}
+              onChange={e => setIncludeCodebaseContext(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 bg-slate-700 border-slate-600 rounded focus:ring-indigo-500 focus:ring-2"
+            />
+            <label htmlFor="codebase-toggle" className="text-slate-300 text-sm cursor-pointer">
+              Include codebase context from <a href="https://github.com/mittalhardik/TMRW-PRD-Agent.git" target="_blank" rel="noopener noreferrer" className="underline text-indigo-400 hover:text-indigo-300">GitHub repository</a>
+            </label>
+          </div>
+        </div>
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <aside className="lg:col-span-1 flex flex-col space-y-4">
             <div>
