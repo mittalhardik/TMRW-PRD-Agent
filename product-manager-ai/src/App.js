@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrainCircuit, FileText, Search, Loader, Clipboard, Check, Book, Upload, File } from 'lucide-react';
 import MarkdownRenderer from './components/MarkdownRenderer';
+import JiraTicketCreator from './components/JiraTicketCreator';
 
 // --- Helper Components ---
 const IconWrapper = ({ children }) => <div className="bg-slate-800 p-2 rounded-md">{children}</div>;
@@ -65,7 +66,7 @@ const CopyButton = ({ text }) => {
     );
 };
 
-const OutputDisplay = ({ title, content }) => {
+const OutputDisplay = ({ title, content, documentId, documentTitle }) => {
   const [renderMode, setRenderMode] = useState('auto'); // 'auto', 'markdown', 'html'
   
   // Function to detect if content contains markdown
@@ -111,13 +112,22 @@ const OutputDisplay = ({ title, content }) => {
       <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 relative">
         <CopyButton text={content} />
         {shouldRenderAsMarkdown ? (
-          <MarkdownRenderer content={content} />
+          <div className="selectable-content">
+            <MarkdownRenderer content={content} />
+          </div>
         ) : (
-          <div className="prose prose-invert max-w-none text-slate-300">
+          <div className="prose prose-invert max-w-none text-slate-300 selectable-content">
             <div dangerouslySetInnerHTML={{ __html: content }} />
           </div>
         )}
       </div>
+      
+      {/* Jira Ticket Creator for selectable content */}
+      <JiraTicketCreator 
+        content={content}
+        documentId={documentId}
+        documentTitle={documentTitle}
+      />
     </div>
   );
 };
@@ -344,7 +354,7 @@ const IdeationAgent = ({ includeCodebaseContext }) => {
       </button>
       {isLoading && <LoadingSpinner text="Analyzing with RAG Engine..." />}
       {error && <div className="mt-4 text-red-400">{error}</div>}
-      {output && <OutputDisplay title="Ideation Report" content={output} />}
+      {output && <OutputDisplay title="Ideation Report" content={output} documentId="ideation" documentTitle="Ideation Report" />}
     </div>
   );
 };
@@ -415,7 +425,7 @@ const AuthoringAgent = ({ includeCodebaseContext }) => {
       </button>
       {isLoading && <LoadingSpinner text="Generating PRD with RAG Engine..." />}
       {error && <div className="mt-4 text-red-400">{error}</div>}
-      {output && <OutputDisplay title="Generated PRD" content={output} />}
+      {output && <OutputDisplay title="Generated PRD" content={output} documentId="prd" documentTitle="Product Requirements Document" />}
     </div>
   );
 };
@@ -485,7 +495,7 @@ const ReviewAgent = ({ includeCodebaseContext }) => {
       </button>
       {isLoading && <LoadingSpinner text="Reviewing PRD with RAG Engine..." />}
       {error && <div className="mt-4 text-red-400">{error}</div>}
-      {output && <OutputDisplay title="PRD Review Analysis" content={output} />}
+      {output && <OutputDisplay title="PRD Review Analysis" content={output} documentId="review" documentTitle="PRD Review Analysis" />}
     </div>
   );
 };
@@ -523,7 +533,7 @@ const RetrievalAgent = ({ includeCodebaseContext }) => {
       </button>
       {isLoading && <LoadingSpinner text="Retrieving from RAG Engine..." />}
       {error && <div className="mt-4 text-red-400">{error}</div>}
-      {output && <OutputDisplay title="Retrieved Sections" content={output} />}
+      {output && <OutputDisplay title="Retrieved Sections" content={output} documentId="retrieval" documentTitle="Retrieved Information" />}
     </div>
   );
 };

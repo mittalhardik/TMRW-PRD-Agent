@@ -12,7 +12,7 @@ const fs = require('fs');
 const { GoogleAuth } = require('google-auth-library');
 const { Storage } = require('@google-cloud/storage');
 
-// Add node-fetch for GitHub API calls
+// Add node-fetch for GitHub API calls and Jira API calls
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
@@ -644,6 +644,546 @@ app.post('/rag/ingest', upload.single('document'), async (req, res) => {
     });
   }
 });
+
+// Jira API Integration Endpoints
+
+// Generate Jira ticket details using AI
+app.post('/api/jira/generate-ticket', async (req, res) => {
+  try {
+    const { highlightedText, ticketType, documentId, userInstruction, documentTitle } = req.body;
+    
+    // Validate required fields
+    if (!highlightedText || !ticketType) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        required: ['highlightedText', 'ticketType'],
+        received: { highlightedText: !!highlightedText, ticketType: !!ticketType }
+      });
+    }
+
+    // Check credentials
+    const hasCredentials = await checkCredentials();
+    if (!hasCredentials) {
+      return res.status(500).json({
+        error: 'Google Cloud credentials not configured',
+        type: 'CREDENTIALS_ERROR'
+      });
+    }
+
+    console.log(`🎫 Generating Jira ticket for type: ${ticketType}`);
+    console.log(`📝 Highlighted text length: ${highlightedText.length} characters`);
+
+    // Generate ticket details using AI
+    const ticketDetails = await generateJiraTicketDetails(
+      highlightedText, 
+      ticketType, 
+      documentId, 
+      userInstruction, 
+      documentTitle
+    );
+
+    res.json({
+      success: true,
+      ticketDetails,
+      metadata: {
+        ticketType,
+        highlightedTextLength: highlightedText.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Jira ticket generation error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to generate Jira ticket details',
+      type: 'JIRA_GENERATION_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Create Jira ticket in Jira instance
+app.post('/api/jira/create-ticket', async (req, res) => {
+  try {
+    console.log('Received create ticket request:', JSON.stringify(req.body, null, 2));
+    
+    const { 
+      summary = '', 
+      description = '', 
+      ticketType = 'task', 
+      projectKey = '', 
+      assignee = '', 
+      labels = [], 
+      priority = 'Medium',
+      jiraConfig = null
+    } = req.body || {};
+
+    // Validate required fields
+    if (!summary || !summary.trim()) {
+      console.error('Missing or empty summary field');
+      return res.status(400).json({
+        error: 'Summary is required and cannot be empty',
+        field: 'summary',
+        received: summary
+      });
+    }
+
+    if (!description || !description.trim()) {
+      console.error('Missing or empty description field');
+      return res.status(400).json({
+        error: 'Description is required and cannot be empty',
+        field: 'description',
+        received: description
+      });
+    }
+
+    if (!ticketType || !ticketType.trim()) {
+      console.error('Missing or empty ticketType field');
+      return res.status(400).json({
+        error: 'Ticket type is required and cannot be empty',
+        field: 'ticketType',
+        received: ticketType
+      });
+    }
+
+    if (!projectKey || !projectKey.trim()) {
+      console.error('Missing or empty projectKey field');
+      return res.status(400).json({
+        error: 'Project key is required and cannot be empty',
+        field: 'projectKey',
+        received: projectKey
+      });
+    }
+
+    if (!jiraConfig) {
+      console.error('Missing jiraConfig field');
+      return res.status(400).json({
+        error: 'Jira configuration is required',
+        field: 'jiraConfig',
+        received: jiraConfig
+      });
+    }
+
+    // Validate jiraConfig structure
+    const { domain = '', email = '', apiToken = '' } = jiraConfig;
+    if (!domain || !email || !apiToken) {
+      console.error('Invalid jiraConfig structure:', { domain: !!domain, email: !!email, apiToken: !!apiToken });
+      return res.status(400).json({
+        error: 'Jira configuration must include domain, email, and apiToken',
+        field: 'jiraConfig',
+        received: { domain: !!domain, email: !!email, apiToken: !!apiToken }
+      });
+    }
+
+    console.log(`🎫 Creating Jira ticket in project: ${projectKey}`);
+    console.log(`📝 Ticket type: ${ticketType}`);
+
+    // Create ticket in Jira with validated data
+    const jiraResponse = await createJiraTicket({
+      summary: summary.trim(),
+      description: description.trim(),
+      ticketType: ticketType.trim(),
+      projectKey: projectKey.trim(),
+      assignee: assignee ? assignee.trim() : '',
+      labels: Array.isArray(labels) ? labels : [],
+      priority: priority ? priority.trim() : 'Medium',
+      jiraConfig: {
+        domain: domain.trim(),
+        email: email.trim(),
+        apiToken: apiToken.trim()
+      }
+    });
+
+    res.json({
+      success: true,
+      jiraTicket: jiraResponse,
+      metadata: {
+        ticketType,
+        projectKey,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Jira ticket creation error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      error: error.message || 'Failed to create Jira ticket',
+      type: 'JIRA_CREATION_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Generate Jira ticket details using AI and RAG
+async function generateJiraTicketDetails(highlightedText, ticketType, documentId, userInstruction, documentTitle) {
+  const ai = new GoogleGenAI({
+    vertexai: true,
+    project: PROJECT_ID,
+    location: LOCATION,
+  });
+
+  // Build context for AI generation
+  let context = `You are an expert Product Manager and Jira administrator. Your task is to generate a comprehensive Jira ticket based on highlighted text from a document.`;
+  
+  if (documentTitle) {
+    context += `\n\nSource Document: ${documentTitle}`;
+  }
+  
+  if (documentId) {
+    context += `\nDocument ID: ${documentId}`;
+  }
+
+  // Create prompt based on ticket type
+  let ticketTypePrompt = '';
+  switch (ticketType.toLowerCase()) {
+    case 'story':
+      ticketTypePrompt = `Create a User Story with the following structure:
+- Summary: Clear, concise title (max 255 characters)
+- Description: Detailed description including:
+  * User story format: "As a [user], I want [feature], so that [benefit]"
+  * Detailed requirements and acceptance criteria
+  * Technical considerations
+  * Dependencies and blockers
+- Acceptance Criteria: Bullet points of specific, testable criteria
+- Labels: Relevant tags for categorization
+- Components: Technical areas affected
+- Priority: Based on business impact and urgency`;
+      break;
+    case 'epic':
+      ticketTypePrompt = `Create an Epic with the following structure:
+- Summary: High-level initiative title (max 255 characters)
+- Description: Strategic overview including:
+  * Business objective and value proposition
+  * Scope and major deliverables
+  * Success metrics and KPIs
+  * Timeline and milestones
+  * Stakeholders and dependencies
+- Labels: Strategic tags and categories
+- Components: Major system areas involved
+- Priority: Strategic importance`;
+      break;
+    case 'task':
+      ticketTypePrompt = `Create a Task with the following structure:
+- Summary: Specific task title (max 255 characters)
+- Description: Detailed task description including:
+  * Specific work to be done
+  * Technical requirements and constraints
+  * Resources and tools needed
+  * Expected deliverables
+  * Time estimates
+- Acceptance Criteria: Clear completion criteria
+- Labels: Relevant tags
+- Components: Technical areas involved
+- Priority: Based on urgency and impact`;
+      break;
+    case 'bug':
+      ticketTypePrompt = `Create a Bug report with the following structure:
+- Summary: Clear bug description (max 255 characters)
+- Description: Detailed bug report including:
+  * Steps to reproduce
+  * Expected vs actual behavior
+  * Environment details (browser, OS, etc.)
+  * Error messages or logs
+  * Impact assessment
+  * Workarounds (if any)
+- Acceptance Criteria: Specific fix verification steps
+- Labels: Bug categories and severity
+- Components: Affected system areas
+- Priority: Based on severity and impact`;
+      break;
+    default:
+      ticketTypePrompt = `Create a general Jira ticket with:
+- Summary: Clear title (max 255 characters)
+- Description: Comprehensive details
+- Acceptance Criteria: Specific completion criteria
+- Labels: Relevant tags
+- Components: Technical areas involved
+- Priority: Based on importance and urgency`;
+  }
+
+  // Build the complete prompt
+  const prompt = `${context}
+
+Ticket Type: ${ticketType.toUpperCase()}
+
+${ticketTypePrompt}
+
+Highlighted Text from Document:
+"""
+${highlightedText}
+"""
+
+${userInstruction ? `Additional Instructions: ${userInstruction}\n\n` : ''}
+
+Please generate a complete Jira ticket with the following JSON structure:
+{
+  "summary": "Clear, concise title (max 255 characters)",
+  "description": "Detailed description with proper formatting",
+  "acceptanceCriteria": ["Criterion 1", "Criterion 2", "Criterion 3"],
+  "labels": ["label1", "label2"],
+  "priority": "High|Medium|Low",
+  "assignee": "suggested-assignee-email",
+  "estimatedTime": "time-estimate-in-hours"
+}
+
+Important:
+1. Keep summary under 255 characters
+2. Use proper Jira formatting in description (headers, lists, code blocks)
+3. Make acceptance criteria specific and testable
+4. Suggest relevant labels based on the content
+5. Recommend appropriate priority based on business impact
+6. Suggest assignee based on the technical area or expertise needed
+7. Include any relevant technical details or constraints mentioned in the text`;
+
+  // Use RAG Engine for enhanced context
+  const tools = [
+    {
+      retrieval: {
+        vertexRagStore: {
+          ragCorpora: [RAG_CORPUS],
+          similarityTopK: 10
+        }
+      }
+    }
+  ];
+
+  const systemInstruction = {
+    parts: [{ text: `You are an expert Product Manager and Jira administrator. Generate high-quality, actionable Jira tickets based on the provided content and context from the knowledge base.` }]
+  };
+
+  const reqPayload = {
+    model: MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: prompt }]
+      }
+    ],
+    tools,
+    systemInstruction,
+    maxOutputTokens: 65535,
+    temperature: 0.7,
+    topP: 1,
+    seed: 0,
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+    ]
+  };
+
+  try {
+    const streamingResp = await ai.models.generateContentStream(reqPayload);
+    let result = '';
+    
+    for await (const chunk of streamingResp) {
+      if (chunk.text) {
+        result += chunk.text;
+      }
+    }
+
+    // Parse the JSON response
+    let ticketDetails;
+    try {
+      // Extract JSON from the response (handle cases where AI adds extra text)
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        ticketDetails = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No valid JSON found in response');
+      }
+    } catch (parseError) {
+      console.error('Failed to parse AI response as JSON:', result);
+      // Fallback: create a basic structure
+      ticketDetails = {
+        summary: highlightedText.substring(0, 255),
+        description: `Generated from highlighted text:\n\n${highlightedText}`,
+        acceptanceCriteria: ['Complete the task as described'],
+        labels: ['auto-generated'],
+        priority: 'Medium',
+        assignee: null,
+        estimatedTime: '4'
+      };
+    }
+
+    return ticketDetails;
+
+  } catch (error) {
+    console.error('AI generation error:', error);
+    throw new Error(`Failed to generate ticket details: ${error.message}`);
+  }
+}
+
+// Create ticket in Jira using REST API
+async function createJiraTicket(ticketData) {
+  // Validate input
+  if (!ticketData) {
+    throw new Error('Ticket data is required');
+  }
+
+  console.log('Creating Jira ticket with data:', JSON.stringify(ticketData, null, 2));
+
+  // Destructure with default values to prevent undefined errors
+  const { 
+    summary = '', 
+    description = '', 
+    ticketType = 'task', 
+    projectKey = '', 
+    assignee = '', 
+    labels = [], 
+    priority = 'Medium',
+    jiraConfig = null
+  } = ticketData || {};
+
+  // Validate required fields
+  if (!summary || !summary.trim()) {
+    throw new Error('Summary is required');
+  }
+
+  if (!description || !description.trim()) {
+    throw new Error('Description is required');
+  }
+
+  if (!projectKey || !projectKey.trim()) {
+    throw new Error('Project key is required');
+  }
+
+  if (!jiraConfig) {
+    throw new Error('Jira configuration is required');
+  }
+
+  const { domain = '', email = '', apiToken = '' } = jiraConfig || {};
+
+  if (!domain || !email || !apiToken) {
+    throw new Error('Missing Jira configuration (domain, email, or apiToken)');
+  }
+
+  // Map ticket types to Jira issue types
+  const issueTypeMap = {
+    'story': 'Story',
+    'epic': 'Epic',
+    'task': 'Task',
+    'bug': 'Bug'
+  };
+
+  const issueType = issueTypeMap[ticketType.toLowerCase()] || 'Task';
+
+  // Build Jira API request body
+  const requestBody = {
+    fields: {
+      project: {
+        key: projectKey
+      },
+      summary: summary,
+      description: {
+        type: "doc",
+        version: 1,
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: description
+              }
+            ]
+          }
+        ]
+      },
+      issuetype: {
+        name: issueType
+      }
+    }
+  };
+
+  // Add optional fields if provided
+  if (assignee && assignee.trim()) {
+    requestBody.fields.assignee = {
+      accountId: assignee
+    };
+  }
+
+  if (labels && Array.isArray(labels) && labels.length > 0) {
+    requestBody.fields.labels = labels;
+  }
+
+  // Note: Priority field is optional and may not be available in all Jira projects
+  // We'll try to set it, but won't fail if it's not available
+  if (priority && priority.trim()) {
+    requestBody.fields.priority = {
+      name: priority
+    };
+  }
+
+  console.log('Jira API request body:', JSON.stringify(requestBody, null, 2));
+
+  // Make API call to Jira
+  const response = await fetch(`https://${domain}.atlassian.net/rest/api/3/issue`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Jira API error:', errorText);
+    
+    // Check if the error is specifically about priority field
+    if (errorText.includes('priority') && errorText.includes('cannot be set')) {
+      console.log('Priority field not available in this Jira project, retrying without priority...');
+      
+      // Remove priority from request and retry
+      delete requestBody.fields.priority;
+      
+      const retryResponse = await fetch(`https://${domain}.atlassian.net/rest/api/3/issue`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!retryResponse.ok) {
+        const retryErrorText = await retryResponse.text();
+        console.error('Jira API retry error:', retryErrorText);
+        throw new Error(`Jira API error: ${retryResponse.status} - ${retryErrorText}`);
+      }
+      
+      const result = await retryResponse.json();
+      console.log(`✅ Jira ticket created (without priority): ${result.key}`);
+      
+      return {
+        key: result.key,
+        id: result.id,
+        self: result.self,
+        summary: result.fields?.summary || 'No summary available',
+        url: `https://${domain}.atlassian.net/browse/${result.key}`,
+        note: 'Priority field was not available in this Jira project'
+      };
+    }
+    
+    throw new Error(`Jira API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  console.log(`✅ Jira ticket created: ${result.key}`);
+
+  return {
+    key: result.key,
+    id: result.id,
+    self: result.self,
+    summary: result.fields?.summary || 'No summary available',
+    url: `https://${domain}.atlassian.net/browse/${result.key}`
+  };
+}
 
 // Error handling middleware
 app.use((error, req, res, next) => {
